@@ -1,135 +1,77 @@
 -- Server-side handler for spin requests
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
 
 local BrainrotConfig = require(ReplicatedStorage.Shared.BrainrotConfig)
+local DataManager    = require(script.Parent.DataManager)
 
 local SpinHandler = {}
 
--- Remote events folder
+-- SpinHandler creates the RemoteEvents folder; all other server modules find it via WaitForChild
 local RemoteEvents = Instance.new("Folder")
-RemoteEvents.Name = "RemoteEvents"
+RemoteEvents.Name   = "RemoteEvents"
 RemoteEvents.Parent = ReplicatedStorage
 
--- Create remote event for spin requests
 local SpinRemote = Instance.new("RemoteEvent")
-SpinRemote.Name = "SpinRemote"
+SpinRemote.Name   = "SpinRemote"
 SpinRemote.Parent = RemoteEvents
 
--- Player data storage (in a real game, use DataStores)
-local PlayerData = {}
+-- Hand the folder to DataManager so it can append its own remotes and hook PlayerAdded
+DataManager.init(RemoteEvents)
 
--- Initialize player data
-local function initializePlayerData(player: Player)
-	if not PlayerData[player.UserId] then
-		PlayerData[player.UserId] = {
-			Money = 0,
-			Inventory = {},
-			TotalSpins = 0,
-			PityCounter = 0 -- Tracks rolls since last rare drop
-		}
-	end
-end
-
--- Handle player joining
-Players.PlayerAdded:Connect(function(player)
-	initializePlayerData(player)
-
-	-- Create leaderstats
-	local leaderstats = Instance.new("Folder")
-	leaderstats.Name = "leaderstats"
-	leaderstats.Parent = player
-
-	local moneyValue = Instance.new("IntValue")
-	moneyValue.Name = "Money"
-	moneyValue.Value = PlayerData[player.UserId].Money
-	moneyValue.Parent = leaderstats
-
-	print(`[Server] Player {player.Name} joined with {PlayerData[player.UserId].Money} money`)
-end)
-
--- Handle player leaving
-Players.PlayerRemoving:Connect(function(player)
-	-- In a real game, save data to DataStore here
-	PlayerData[player.UserId] = nil
-end)
-
--- Handle spin request
+-- ── Spin request ───────────────────────────────────────────────────────────────
 SpinRemote.OnServerEvent:Connect(function(player: Player)
-	initializePlayerData(player)
-
-	local playerData = PlayerData[player.UserId]
-
-	-- Check pity system
+	local pityCount  = DataManager.getPityCount(player)
 	local brainrot
 	local isPityDrop = false
 
-	if BrainrotConfig.PityConfig.Enabled and playerData.PityCounter >= BrainrotConfig.PityConfig.PityThreshold then
-		-- Guarantee a rare drop
-		brainrot = BrainrotConfig.getGuaranteedRareBrainrot()
-		isPityDrop = true
-		playerData.PityCounter = 0
-		print(`[Server] {player.Name} hit pity! Guaranteed rare drop: {brainrot.Name}`)
+	-- Pity guarantee
+	if BrainrotConfig.PityConfig.Enabled and pityCount >= BrainrotConfig.PityConfig.PityThreshold then
+		brainrot     = BrainrotConfig.getGuaranteedRareBrainrot()
+		isPityDrop   = true
+		DataManager.setPityCount(player, 0)
+		print("[Server] " .. player.Name .. " hit pity! Got: " .. brainrot.Name)
 	else
-		-- Normal random drop
-		brainrot = BrainrotConfig.getRandomBrainrot()
+		brainrot   = BrainrotConfig.getRandomBrainrot()
+		pityCount  = pityCount + 1
 
-		-- Update pity counter
-		playerData.PityCounter = playerData.PityCounter + 1
-
-		-- Reset pity if they got a rare naturally
 		if BrainrotConfig.countsForPityReset(brainrot) then
-			playerData.PityCounter = 0
-			print(`[Server] {player.Name} got rare naturally! Pity reset.`)
+			pityCount = 0
+			print("[Server] " .. player.Name .. " got rare naturally — pity reset.")
 		end
+
+		DataManager.setPityCount(player, pityCount)
 	end
 
-	-- Check for near-miss effect
+	-- Near-miss check
 	local shouldShowNearMiss = false
-	local nearMissBrainrot = nil
+	local nearMissBrainrot   = nil
 
 	if BrainrotConfig.NearMissConfig.Enabled and not isPityDrop then
-		-- Don't show near-miss if they already got something rare
 		if brainrot.Rarity < BrainrotConfig.NearMissConfig.MinRarityToShow then
-			local nearMissRoll = math.random()
-			if nearMissRoll < BrainrotConfig.NearMissConfig.Chance then
+			if math.random() < BrainrotConfig.NearMissConfig.Chance then
 				shouldShowNearMiss = true
-				nearMissBrainrot = BrainrotConfig.getSuperRareBrainrot()
-				print(`[Server] {player.Name} near-miss! Showing {nearMissBrainrot.Name} nearby`)
+				nearMissBrainrot   = BrainrotConfig.getSuperRareBrainrot()
 			end
 		end
 	end
 
-	-- Update player data
-	playerData.Money = playerData.Money + brainrot.MoneyReward
-	playerData.TotalSpins = playerData.TotalSpins + 1
+	-- Persist the new item and award money
+	local slotId = DataManager.addItem(player, brainrot.Name)
+	DataManager.addMoney(player, brainrot.MoneyReward)
 
-	-- Add to inventory
-	table.insert(playerData.Inventory, {
-		Name = brainrot.Name,
-		Timestamp = os.time()
-	})
+	local currentPity = DataManager.getPityCount(player)
+	print("[Server] " .. player.Name .. " rolled " .. brainrot.Name
+		.. " (1/" .. brainrot.Rarity .. ") | Pity: "
+		.. currentPity .. "/" .. BrainrotConfig.PityConfig.PityThreshold)
 
-	-- Update leaderstats
-	local leaderstats = player:FindFirstChild("leaderstats")
-	if leaderstats then
-		local moneyValue = leaderstats:FindFirstChild("Money")
-		if moneyValue then
-			moneyValue.Value = playerData.Money
-		end
-	end
-
-	local pityInfo = `(Pity: {playerData.PityCounter}/{BrainrotConfig.PityConfig.PityThreshold})`
-	print(`[Server] {player.Name} spun and got {brainrot.Name} (1/{brainrot.Rarity}) - Reward: ${brainrot.MoneyReward} {pityInfo}`)
-
-	-- Send result back to client with near-miss info
 	SpinRemote:FireClient(player, {
-		Result = brainrot,
-		NearMiss = shouldShowNearMiss,
+		Result          = brainrot,
+		SlotId          = slotId,
+		NearMiss        = shouldShowNearMiss,
 		NearMissBrainrot = nearMissBrainrot,
-		PityCounter = playerData.PityCounter,
-		PityMax = BrainrotConfig.PityConfig.PityThreshold,
-		IsPityDrop = isPityDrop
+		PityCounter     = currentPity,
+		PityMax         = BrainrotConfig.PityConfig.PityThreshold,
+		IsPityDrop      = isPityDrop,
 	})
 end)
 

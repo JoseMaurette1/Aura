@@ -13,6 +13,10 @@ local SpinRemote = ReplicatedStorage:WaitForChild("RemoteEvents"):WaitForChild("
 local SpinUI = {}
 SpinUI.IsSpinning = false
 
+local function displayName(name: string): string
+	return name:gsub("_", " ")
+end
+
 local function shakeFrame(frame)
 	local origin = frame.Position
 	local ox = origin.X.Offset
@@ -60,6 +64,7 @@ function SpinUI.init()
 
 	SpinRemote.OnClientEvent:Connect(function(data)
 		local result = data.Result
+		local slotId = data.SlotId
 
 		task.spawn(function()
 			local totalDuration = 5
@@ -88,7 +93,7 @@ function SpinUI.init()
 
 				if tick() - lastUpdate >= speed then
 					local b = BrainrotConfig.Brainrots[math.random(1, #BrainrotConfig.Brainrots)]
-					brainrotName.Text = b.Name
+					brainrotName.Text = displayName(b.Name)
 					brainrotRarity.Text = "1 in " .. b.Rarity
 					nameStroke.Color = b.Color
 					rarityStroke.Color = b.Color
@@ -99,7 +104,7 @@ function SpinUI.init()
 			end
 
 			-- Snap to final result
-			brainrotName.Text = result.Name
+			brainrotName.Text = displayName(result.Name)
 			brainrotRarity.Text = "1 in " .. result.Rarity
 			nameStroke.Color = result.Color
 			rarityStroke.Color = result.Color
@@ -113,7 +118,7 @@ function SpinUI.init()
 
 			-- Shake then instantly hide
 			shakeFrame(spinningFrame)
-			InventoryController.addItem(result)
+			InventoryController.addItem(result, slotId)
 			spinningFrame.Visible = false
 			rollButton.Active = true
 			SpinUI.IsSpinning = false
