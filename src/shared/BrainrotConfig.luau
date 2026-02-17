@@ -47,6 +47,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Tralalero Tralala",
 		ModelName = "Tralalero Tralala",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "La la la la la.",
@@ -56,6 +57,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Brr Brr Patapim",
 		ModelName = "Brr Brr Patapim",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Brrr.",
@@ -65,6 +67,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Chimpanzini Bananini",
 		ModelName = "Chimpanzini Bananini",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "He's got bananas.",
@@ -74,6 +77,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Odin Din Din Dun",
 		ModelName = "Odin Din Din Dun",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Din din din.",
@@ -83,6 +87,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Espresso Signora",
 		ModelName = "Espresso Signora",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Un espresso, per favore.",
@@ -92,6 +97,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Los Combinasionas",
 		ModelName = "Los Combinasionas",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "The combination squad.",
@@ -101,6 +107,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Los Mokel sitos dicen Mokell",
 		ModelName = "Los Mokel sitos dicen Mokell",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Mokell! Mokell!",
@@ -110,6 +117,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Piccione Macchina",
 		ModelName = "Piccione Macchina",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Pigeon machine.",
@@ -119,6 +127,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Los Boneca_Ambalabusitos dicen AMBALABUU",
 		ModelName = "Los Boneca_Ambalabusitos dicen AMBALABUU",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "AMBALABUU!!",
@@ -128,6 +137,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Ballerino Lololo",
 		ModelName = "Ballerino Lololo",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "He dances.",
@@ -137,6 +147,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Pandaccini Bananini",
 		ModelName = "Pandaccini Bananini",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Panda with bananas.",
@@ -146,6 +157,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Tukanno Bananno",
 		ModelName = "Tukanno Bananno",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Toucan with a banana.",
@@ -155,6 +167,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Agarrini la Palini",
 		ModelName = "Agarrini la Palini",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Grab the palm.",
@@ -164,6 +177,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Boneca",
 		ModelName = "Boneca",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "The original doll.",
@@ -173,6 +187,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Las Tralaleritas",
 		ModelName = "Las Tralaleritas",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "The tralalero sisters.",
@@ -182,6 +197,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Cocofanto Elefanto",
 		ModelName = "Cocofanto Elefanto",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Coconut elephant.",
@@ -191,6 +207,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Avocadorilla",
 		ModelName = "Avocadorilla",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Avocado gorilla.",
@@ -200,6 +217,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Noobini Pizzanini",
 		ModelName = "Noobini Pizzanini",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Noob pizza enjoyer.",
@@ -209,6 +227,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Gangster Footera",
 		ModelName = "Gangster Footera",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Foot gang.",
@@ -218,6 +237,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Tim Cheese",
 		ModelName = "Tim Cheese",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Just Tim and his cheese.",
@@ -227,6 +247,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Talpa Di Fero",
 		ModelName = "Talpa Di Fero",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Iron mole.",
@@ -236,6 +257,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Pipi Corni",
 		ModelName = "Pipi Corni",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Corny.",
@@ -245,6 +267,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Pipi Avocado",
 		ModelName = "Pipi Avocado",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Avocado vibes.",
@@ -254,6 +277,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Salamino Penguino",
 		ModelName = "Salamino Penguino",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Salami penguin.",
@@ -263,6 +287,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Fluriflura",
 		ModelName = "Fluriflura",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Flurry of flura.",
@@ -272,6 +297,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Cocosini Mama",
 		ModelName = "Cocosini Mama",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Mama coconut.",
@@ -281,6 +307,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Penguino Cocosino",
 		ModelName = "Penguino Cocosino",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Coconut penguin.",
@@ -290,6 +317,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Sigma Boy",
 		ModelName = "Sigma Boy",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Sigma grindset.",
@@ -299,6 +327,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Bambini_Crostini",
 		ModelName = "Bambini_Crostini",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Baby crostini.",
@@ -308,6 +337,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Ta Ta Ta Ta Sahur",
 		ModelName = "Ta Ta Ta Ta Sahur",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Ta ta ta sahur!",
@@ -317,6 +347,7 @@ BrainrotConfig.Brainrots = {
 	{
 		Name = "Cacto Hipopotamo",
 		ModelName = "Cacto Hipopotamo",
+		AuraName = "CommonAura",
 		Rarity = 15,
 		MoneyReward = 100,
 		Description = "Cactus hippo.",
