@@ -4,6 +4,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BrainrotConfig = require(ReplicatedStorage.Shared.BrainrotConfig)
 local UIManager      = require(script.Parent.UIManager)
+local ButtonEffects  = require(script.Parent.ButtonEffects)
 
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -16,6 +17,7 @@ function RebirthController.init()
 	local rebirthButton = screenGui:WaitForChild("RebirthButton")
 
 	rebirthFrame.Visible = false
+	ButtonEffects.apply(rebirthButton)
 
 	rebirthButton.MouseButton1Click:Connect(function()
 		UIManager.open(rebirthFrame)
@@ -25,6 +27,7 @@ function RebirthController.init()
 		-- Exit button
 		local header     = rebirthFrame:WaitForChild("RebirthHeader")
 		local exitButton = header:WaitForChild("RebirthExitButton")
+		ButtonEffects.applySubtle(exitButton)
 		exitButton.MouseButton1Click:Connect(function()
 			UIManager.close(rebirthFrame)
 		end)
@@ -72,6 +75,8 @@ function RebirthController.init()
 
 		-- React to rebirth count changes (after server confirms)
 		rebirthsValue.Changed:Connect(updateUI)
+
+		ButtonEffects.applyPrimary(prestigeButton)
 
 		-- Prestige button click — fire server
 		prestigeButton.MouseButton1Click:Connect(function()

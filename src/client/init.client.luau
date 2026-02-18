@@ -31,3 +31,11 @@ SettingsController.init()
 -- Initialize Auto Click Controller
 local AutoClickController = require(script.AutoClickController)
 AutoClickController.init()
+
+-- Initialize Simulator Circle Controller
+local SimulatorCircleController = require(script.SimulatorCircleController)
+SimulatorCircleController.init()
+
+-- Initialize Codes Controller
+local CodesController = require(script.CodesController)
+CodesController.init()

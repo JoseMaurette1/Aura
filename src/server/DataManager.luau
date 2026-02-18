@@ -12,14 +12,15 @@ local cache = {}
 
 local function defaultData()
 	return {
-		inventory       = {},
-		nextSlotId      = 1,
-		money           = 0,
-		pityCount       = 0,   -- spins since last uncommon+ (uncommon pity)
-		pityLegendary   = 0,   -- spins since last legendary+
-		pityMythic      = 0,   -- spins since last mythic
-		rebirthCount    = 0,
+		inventory        = {},
+		nextSlotId       = 1,
+		money            = 0,
+		pityCount        = 0,   -- spins since last uncommon+ (uncommon pity)
+		pityLegendary    = 0,   -- spins since last legendary+
+		pityMythic       = 0,   -- spins since last mythic
+		rebirthCount     = 0,
 		equippedBrainrot = nil,
+		redeemedCodes    = {},  -- set: { ["CODENAME"] = true }
 	}
 end
 
@@ -36,13 +37,20 @@ local function serializeData(data)
 		table.insert(invArray, entry.name)
 	end
 
+	-- Serialize redeemedCodes set → array for JSON safety
+	local redeemedArray = {}
+	for code in pairs(data.redeemedCodes) do
+		table.insert(redeemedArray, code)
+	end
+
 	return {
-		inventory     = invArray,
-		money         = data.money,
-		pityCount     = data.pityCount,
-		pityLegendary = data.pityLegendary,
-		pityMythic    = data.pityMythic,
-		rebirthCount  = data.rebirthCount,
+		inventory      = invArray,
+		money          = data.money,
+		pityCount      = data.pityCount,
+		pityLegendary  = data.pityLegendary,
+		pityMythic     = data.pityMythic,
+		rebirthCount   = data.rebirthCount,
+		redeemedCodes  = redeemedArray,
 	}
 end
 
@@ -54,6 +62,13 @@ local function deserializeData(raw)
 	data.pityLegendary  = raw.pityLegendary  or 0
 	data.pityMythic     = raw.pityMythic     or 0
 	data.rebirthCount   = raw.rebirthCount   or 0
+
+	-- Deserialize redeemedCodes array → set for O(1) lookup
+	if raw.redeemedCodes then
+		for _, code in ipairs(raw.redeemedCodes) do
+			data.redeemedCodes[code] = true
+		end
+	end
 
 	if raw.inventory then
 		for i, name in ipairs(raw.inventory) do
@@ -275,6 +290,16 @@ function DataManager.setRebirthCount(player, count)
 	if not data then return end
 	data.rebirthCount = count
 	updateRebirthLeaderstats(player, count)
+end
+
+function DataManager.hasRedeemedCode(player, code: string): boolean
+	local data = cache[tostring(player.UserId)]
+	return data and data.redeemedCodes[code] == true or false
+end
+
+function DataManager.markCodeRedeemed(player, code: string)
+	local data = cache[tostring(player.UserId)]
+	if data then data.redeemedCodes[code] = true end
 end
 
 function DataManager.resetMoney(player)

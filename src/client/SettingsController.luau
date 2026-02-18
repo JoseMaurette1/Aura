@@ -2,7 +2,8 @@
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local UIManager = require(script.Parent.UIManager)
+local UIManager     = require(script.Parent.UIManager)
+local ButtonEffects = require(script.Parent.ButtonEffects)
 
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -55,6 +56,7 @@ function SettingsController.init()
 	local settingsFrame  = settingsButton:WaitForChild("SettingsGUI")
 
 	settingsFrame.Visible = false
+	ButtonEffects.apply(settingsButton)
 
 	settingsButton.MouseButton1Click:Connect(function()
 		UIManager.open(settingsFrame)
@@ -62,6 +64,7 @@ function SettingsController.init()
 
 	task.spawn(function()
 		local exitButton = settingsFrame:WaitForChild("ExitButton")
+		ButtonEffects.applySubtle(exitButton)
 		exitButton.MouseButton1Click:Connect(function()
 			UIManager.close(settingsFrame)
 		end)
@@ -74,6 +77,9 @@ function SettingsController.init()
 			local tierFrame = scroll:WaitForChild(tierName)
 			local yesBtn    = tierFrame:WaitForChild("Yes")
 			local noBtn     = tierFrame:WaitForChild("No")
+
+			ButtonEffects.applySubtle(yesBtn)
+			ButtonEffects.applySubtle(noBtn)
 
 			-- Wire up Yes button
 			yesBtn.MouseButton1Click:Connect(function()

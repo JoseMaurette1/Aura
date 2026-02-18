@@ -9,6 +9,7 @@ local playerGui = player:WaitForChild("PlayerGui")
 local BrainrotConfig      = require(ReplicatedStorage.Shared.BrainrotConfig)
 local InventoryController = require(script.Parent.InventoryController)
 local SettingsController  = require(script.Parent.SettingsController)
+local ButtonEffects       = require(script.Parent.ButtonEffects)
 
 local RemoteEvents     = ReplicatedStorage:WaitForChild("RemoteEvents")
 local SpinRemote       = RemoteEvents:WaitForChild("SpinRemote")
@@ -20,6 +21,60 @@ SpinUI.IsSpinning = false
 
 local function displayName(name: string): string
 	return name:gsub("_", " ")
+end
+
+-- Rarity tier helpers for visual effects
+local function getRarityTier(rarity: number): string
+	if rarity <= 25   then return "Common"
+	elseif rarity <= 100  then return "Uncommon"
+	elseif rarity <= 1000 then return "Rare"
+	elseif rarity <= 5000 then return "Legendary"
+	else                       return "Mythic"
+	end
+end
+
+local RARITY_EFFECTS = {
+	Common    = { flashColor = nil,                            punchBonus = 0,  confetti = false },
+	Uncommon  = { flashColor = Color3.fromRGB(120, 255, 120), punchBonus = 8,  confetti = false },
+	Rare      = { flashColor = Color3.fromRGB(180, 80, 255),  punchBonus = 20, confetti = false },
+	Legendary = { flashColor = Color3.fromRGB(255, 200, 50),  punchBonus = 36, confetti = true  },
+	Mythic    = { flashColor = Color3.fromRGB(255, 50, 50),   punchBonus = 52, confetti = true  },
+}
+
+local function flashScreen(rarityFlash, color, intensity)
+	rarityFlash.BackgroundColor3 = color
+	rarityFlash.BackgroundTransparency = intensity
+	TweenService:Create(rarityFlash, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		BackgroundTransparency = 1
+	}):Play()
+end
+
+local function spawnConfetti(screenGui, color)
+	local COLORS = { color, Color3.fromRGB(255, 255, 255), Color3.fromRGB(255, 230, 100) }
+	for _ = 1, 28 do
+		local dot = Instance.new("Frame")
+		dot.Size = UDim2.new(0, math.random(6, 14), 0, math.random(6, 14))
+		dot.Position = UDim2.new(0.5, 0, 0.5, 0)
+		dot.AnchorPoint = Vector2.new(0.5, 0.5)
+		dot.BackgroundColor3 = COLORS[math.random(1, #COLORS)]
+		dot.BorderSizePixel = 0
+		dot.ZIndex = 45
+		dot.Parent = screenGui
+
+		local angle = math.random() * math.pi * 2
+		local dist  = math.random(120, 380)
+		local ox    = math.floor(math.cos(angle) * dist)
+		local oy    = math.floor(math.sin(angle) * dist)
+
+		task.spawn(function()
+			TweenService:Create(dot, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Position             = UDim2.new(0.5, ox, 0.5, oy),
+				BackgroundTransparency = 1,
+			}):Play()
+			task.wait(0.9)
+			dot:Destroy()
+		end)
+	end
 end
 
 local function shakeFrame(frame)
@@ -69,7 +124,8 @@ function SpinUI.init()
 	-- Set initial pity values as soon as server sends them on join
 	PityLoadRemote.OnClientEvent:Connect(updatePityBars)
 
-	local landedSize = brainrotName.TextSize
+	local rarityFlash = screenGui:WaitForChild("RarityFlash")
+	local landedSize  = brainrotName.TextSize
 
 	spinningFrame.Visible = false
 
@@ -85,6 +141,7 @@ function SpinUI.init()
 		SpinRemote:FireServer()
 	end
 
+	ButtonEffects.applyPrimary(rollButton)
 	rollButton.MouseButton1Click:Connect(SpinUI.triggerSpin)
 
 	SpinRemote.OnClientEvent:Connect(function(data)
@@ -135,8 +192,21 @@ function SpinUI.init()
 			nameStroke.Color = result.Color
 			rarityStroke.Color = result.Color
 
-			-- Land punch
-			brainrotName.TextSize = landedSize + 14
+			-- Rarity-scaled effects
+			local tier    = getRarityTier(result.Rarity)
+			local effects = RARITY_EFFECTS[tier]
+
+			if effects.flashColor then
+				local intensity = tier == "Mythic" and 0.15 or 0.3
+				flashScreen(rarityFlash, effects.flashColor, intensity)
+			end
+			if effects.confetti then
+				spawnConfetti(screenGui, result.Color)
+			end
+
+			-- Land punch — bigger for rarer drops
+			local punchAmount = 14 + effects.punchBonus
+			brainrotName.TextSize = landedSize + punchAmount
 			TweenService:Create(brainrotName, TweenInfo.new(0.12, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
 				TextSize = landedSize
 			}):Play()

@@ -5,7 +5,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-local UIManager = require(script.Parent.UIManager)
+local UIManager     = require(script.Parent.UIManager)
+local ButtonEffects = require(script.Parent.ButtonEffects)
 
 local ShopController = {}
 
@@ -15,6 +16,7 @@ function ShopController.init()
 	local shopButton = screenGui:WaitForChild("ShopButton")
 
 	shopFrame.Visible = false
+	ButtonEffects.apply(shopButton)
 
 	shopButton.MouseButton1Click:Connect(function()
 		UIManager.open(shopFrame)
@@ -23,6 +25,7 @@ function ShopController.init()
 	task.spawn(function()
 		local header     = shopFrame:WaitForChild("ShopHeader")
 		local exitButton = header:WaitForChild("ShopExitButton")
+		ButtonEffects.applySubtle(exitButton)
 		exitButton.MouseButton1Click:Connect(function()
 			UIManager.close(shopFrame)
 		end)

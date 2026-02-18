@@ -19,3 +19,8 @@ print("[Server] Rebirth Handler loaded")
 local GamepassHandler = require(script.GamepassHandler)
 GamepassHandler.init()
 print("[Server] Gamepass Handler loaded")
+
+-- Initialize Codes Handler — validates and redeems promo codes
+local CodesHandler = require(script.CodesHandler)
+CodesHandler.init(remoteEventsFolder)
+print("[Server] Codes Handler loaded")

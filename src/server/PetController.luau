@@ -9,12 +9,25 @@ local DataManager    = require(script.Parent.DataManager)
 
 local PetController = {}
 
--- How far to the right of the player the pet floats
-local PET_SIDE_DISTANCE = 5
--- How many studs above HRP the pet hovers
-local PET_FLOAT_HEIGHT  = 3
+local function displayName(name: string): string
+	return name:gsub("_", " ")
+end
+
+-- Tiny clearance above ground to prevent z-fighting / clipping into the floor
+local PET_GROUND_CLEARANCE = 0.05
 -- Smoothing speed (higher = snappier follow)
-local PET_FOLLOW_SPEED  = 8
+local PET_FOLLOW_SPEED     = 8
+
+-- Local-space offsets per equip slot, relative to the player's HRP orientation.
+-- X = right (+) / left (-), Z = behind (+) / forward (-)
+-- Add more entries here when multi-equip is implemented.
+local PET_SLOT_OFFSETS = {
+    Vector3.new( 5, 0,  0),  -- slot 1: right
+    Vector3.new(-5, 0,  0),  -- slot 2: left
+    Vector3.new( 7, 0,  3),  -- slot 3: right-back
+    Vector3.new(-7, 0,  3),  -- slot 4: left-back
+    Vector3.new( 0, 0,  6),  -- slot 5: directly behind
+}
 
 -- Active pets per player: { [userId] = { model, connection, auraModel, billboard } }
 local activePets = {}
@@ -29,15 +42,45 @@ local EquipRemote  = Instance.new("RemoteEvent")
 EquipRemote.Name   = "EquipRemote"
 EquipRemote.Parent = RemoteEvents
 
--- Compute the world CFrame the pet should float at beside the player
-local function getTargetCFrame(hrp: BasePart): CFrame
-	local right     = hrp.CFrame.RightVector
-	local targetPos = Vector3.new(
-		hrp.Position.X + right.X * PET_SIDE_DISTANCE,
-		hrp.Position.Y + PET_FLOAT_HEIGHT,
-		hrp.Position.Z + right.Z * PET_SIDE_DISTANCE
-	)
-	return CFrame.lookAt(targetPos, targetPos + hrp.CFrame.LookVector)
+-- Returns how many studs below the model's pivot its bounding-box bottom sits.
+-- Used to place the pivot so the bottom of the model touches the ground.
+local function getFootOffset(model: Model): number
+	local boundCF, boundSize = model:GetBoundingBox()
+	local pivotY  = model:GetPivot().Position.Y
+	local bottomY = boundCF.Position.Y - boundSize.Y / 2
+	return math.max(0, pivotY - bottomY)
+end
+
+-- Raycast straight down to find the ground Y at a given X,Z.
+-- excludeList should contain the player's character (and the pet model if already spawned).
+local function getGroundY(x: number, z: number, fromY: number, excludeList: {Instance}): number
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = excludeList
+
+	local origin = Vector3.new(x, fromY + 15, z)
+	local result = workspace:Raycast(origin, Vector3.new(0, -80, 0), params)
+	return result and result.Position.Y or (fromY - 3)
+end
+
+-- Compute the world CFrame the pet should stand at beside the player.
+-- slotIndex picks from PET_SLOT_OFFSETS; footOffset keeps the bottom on the ground.
+local function getTargetCFrame(hrp: BasePart, slotIndex: number, footOffset: number, excludeList: {Instance}): CFrame
+	local slotOffset  = PET_SLOT_OFFSETS[slotIndex] or PET_SLOT_OFFSETS[1]
+	local worldOffset = hrp.CFrame:VectorToWorldSpace(slotOffset)
+
+	local targetX = hrp.Position.X + worldOffset.X
+	local targetZ = hrp.Position.Z + worldOffset.Z
+	local groundY = getGroundY(targetX, targetZ, hrp.Position.Y, excludeList)
+	local targetY = groundY + footOffset + PET_GROUND_CLEARANCE
+
+	-- Face the same horizontal direction as the player
+	local look = hrp.CFrame.LookVector
+	local flatLook = Vector3.new(look.X, 0, look.Z)
+	if flatLook.Magnitude < 0.01 then flatLook = Vector3.new(0, 0, -1) else flatLook = flatLook.Unit end
+
+	local targetPos = Vector3.new(targetX, targetY, targetZ)
+	return CFrame.lookAt(targetPos, targetPos + flatLook)
 end
 
 -- Map a brainrot's Rarity number to its tier name prefix
@@ -114,7 +157,8 @@ local function removePet(userId: number)
 	activePets[userId] = nil
 end
 
-local function spawnPet(player: Player, brainrotName: string)
+local function spawnPet(player: Player, brainrotName: string, slotIndex: number?)
+	local slot   = slotIndex or 1
 	local userId = player.UserId
 	removePet(userId)
 
@@ -153,10 +197,14 @@ local function spawnPet(player: Player, brainrotName: string)
 		end
 	end
 
+	-- Calculate foot offset BEFORE parenting to workspace (pivot/bbox are already relative)
+	local footOffset  = getFootOffset(petModel)
+	local excludeList = { character }
+
 	petModel.Parent = workspace
 
 	if hrp then
-		petModel:PivotTo(getTargetCFrame(hrp))
+		petModel:PivotTo(getTargetCFrame(hrp, slot, footOffset, excludeList))
 	end
 
 	-- === Aura: clone the assigned Studio-designed aura from ServerStorage/BrainrotAura ===
@@ -221,40 +269,107 @@ local function spawnPet(player: Player, brainrotName: string)
 	-- === Overhead label: BillboardGui on the player's Head ===
 	local billboard = nil
 	if head then
+		-- Tier name with stars for Rare and above
+		local tierName
+		local r = brainrotData.Rarity
+		if r > 5000 then      tierName = "✦ MYTHIC ✦"
+		elseif r > 1000 then  tierName = "✦ LEGENDARY ✦"
+		elseif r > 100 then   tierName = "✦ RARE ✦"
+		elseif r > 25 then    tierName = "UNCOMMON"
+		else                  tierName = "COMMON"
+		end
+
 		billboard             = Instance.new("BillboardGui")
 		billboard.Name        = "BrainrotLabel"
-		billboard.Size        = UDim2.new(0, 240, 0, 60)
+		billboard.Size        = UDim2.new(0, 220, 0, 82)
 		billboard.StudsOffset = Vector3.new(0, 3, 0)
 		billboard.AlwaysOnTop = false
 		billboard.Parent      = head
 
-		local nameLabel                  = Instance.new("TextLabel")
-		nameLabel.Size                   = UDim2.new(1, 0, 0.6, 0)
+		-- Dark card background
+		local bg = Instance.new("Frame")
+		bg.Size                   = UDim2.new(1, 0, 1, 0)
+		bg.BackgroundColor3       = Color3.fromRGB(12, 12, 18)
+		bg.BackgroundTransparency = 0.25
+		bg.BorderSizePixel        = 0
+		bg.Parent                 = billboard
+
+		local bgCorner = Instance.new("UICorner")
+		bgCorner.CornerRadius = UDim.new(0, 8)
+		bgCorner.Parent = bg
+
+		-- Header strip in rarity color
+		local header = Instance.new("Frame")
+		header.Size             = UDim2.new(1, 0, 0.34, 0)
+		header.BackgroundColor3 = brainrotData.Color
+		header.BackgroundTransparency = 0.2
+		header.BorderSizePixel  = 0
+		header.ZIndex           = 2
+		header.Parent           = bg
+
+		local headerCorner = Instance.new("UICorner")
+		headerCorner.CornerRadius = UDim.new(0, 8)
+		headerCorner.Parent = header
+
+		-- Cover bottom corners of header so only top is rounded
+		local headerFill = Instance.new("Frame")
+		headerFill.Size             = UDim2.new(1, 0, 0.5, 0)
+		headerFill.Position         = UDim2.new(0, 0, 0.5, 0)
+		headerFill.BackgroundColor3 = brainrotData.Color
+		headerFill.BackgroundTransparency = 0.2
+		headerFill.BorderSizePixel  = 0
+		headerFill.ZIndex           = 2
+		headerFill.Parent           = header
+
+		local tierLabel = Instance.new("TextLabel")
+		tierLabel.Size                   = UDim2.new(1, 0, 1, 0)
+		tierLabel.BackgroundTransparency = 1
+		tierLabel.Text                   = tierName
+		tierLabel.TextColor3             = Color3.new(1, 1, 1)
+		tierLabel.TextScaled             = true
+		tierLabel.Font                   = Enum.Font.GothamBold
+		tierLabel.ZIndex                 = 3
+		tierLabel.Parent                 = header
+
+		local tierStroke     = Instance.new("UIStroke")
+		tierStroke.Color     = Color3.fromRGB(0, 0, 0)
+		tierStroke.Thickness = 1.5
+		tierStroke.Parent    = tierLabel
+
+		-- Brainrot name
+		local nameLabel = Instance.new("TextLabel")
+		nameLabel.Size                   = UDim2.new(1, -10, 0.37, 0)
+		nameLabel.Position               = UDim2.new(0, 5, 0.34, 0)
 		nameLabel.BackgroundTransparency = 1
-		nameLabel.Text                   = brainrotData.Name
-		nameLabel.TextColor3             = brainrotData.Color
+		nameLabel.BorderSizePixel        = 0
+		nameLabel.Text                   = displayName(brainrotData.Name)
+		nameLabel.TextColor3             = Color3.new(1, 1, 1)
 		nameLabel.TextScaled             = true
 		nameLabel.Font                   = Enum.Font.GothamBold
-		nameLabel.Parent                 = billboard
+		nameLabel.ZIndex                 = 2
+		nameLabel.Parent                 = bg
 
 		local nameStroke     = Instance.new("UIStroke")
-		nameStroke.Color     = Color3.new(0, 0, 0)
-		nameStroke.Thickness = 2
+		nameStroke.Color     = Color3.fromRGB(0, 0, 0)
+		nameStroke.Thickness = 1.5
 		nameStroke.Parent    = nameLabel
 
-		local rarityLabel                  = Instance.new("TextLabel")
-		rarityLabel.Size                   = UDim2.new(1, 0, 0.4, 0)
-		rarityLabel.Position               = UDim2.new(0, 0, 0.6, 0)
+		-- "1 in X" rarity
+		local rarityLabel = Instance.new("TextLabel")
+		rarityLabel.Size                   = UDim2.new(1, -10, 0.27, 0)
+		rarityLabel.Position               = UDim2.new(0, 5, 0.71, 0)
 		rarityLabel.BackgroundTransparency = 1
+		rarityLabel.BorderSizePixel        = 0
 		rarityLabel.Text                   = "1 in " .. brainrotData.Rarity
 		rarityLabel.TextColor3             = brainrotData.Color
 		rarityLabel.TextScaled             = true
 		rarityLabel.Font                   = Enum.Font.Gotham
-		rarityLabel.Parent                 = billboard
+		rarityLabel.ZIndex                 = 2
+		rarityLabel.Parent                 = bg
 
 		local rarityStroke     = Instance.new("UIStroke")
-		rarityStroke.Color     = Color3.new(0, 0, 0)
-		rarityStroke.Thickness = 2
+		rarityStroke.Color     = Color3.fromRGB(0, 0, 0)
+		rarityStroke.Thickness = 1.5
 		rarityStroke.Parent    = rarityLabel
 	end
 
@@ -273,8 +388,9 @@ local function spawnPet(player: Player, brainrotName: string)
 		local hrp2 = char:FindFirstChild("HumanoidRootPart")
 		if not hrp2 then return end
 
-		local alpha = 1 - math.exp(-PET_FOLLOW_SPEED * dt)
-		petModel:PivotTo(petModel:GetPivot():Lerp(getTargetCFrame(hrp2), alpha))
+		local alpha  = 1 - math.exp(-PET_FOLLOW_SPEED * dt)
+		local target = getTargetCFrame(hrp2, slot, footOffset, { char, petModel })
+		petModel:PivotTo(petModel:GetPivot():Lerp(target, alpha))
 	end)
 
 	activePets[userId] = {

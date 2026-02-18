@@ -3,6 +3,7 @@ local Players = game:GetService("Players")
 
 local SpinUI          = require(script.Parent.SpinUI)
 local RollController  = require(script.Parent.RollController)
+local ButtonEffects   = require(script.Parent.ButtonEffects)
 
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -52,6 +53,7 @@ function AutoClickController.init()
 	local screenGui = playerGui:WaitForChild("ScreenGui")
 	autoClickButton = screenGui:WaitForChild("AutoClickButton")
 	normalColor     = autoClickButton.BackgroundColor3
+	ButtonEffects.apply(autoClickButton)
 
 	autoClickButton.MouseButton1Click:Connect(function()
 		if isRunning then

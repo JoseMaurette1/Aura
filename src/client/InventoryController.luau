@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BrainrotConfig = require(ReplicatedStorage.Shared.BrainrotConfig)
 local UIManager      = require(script.Parent.UIManager)
+local ButtonEffects  = require(script.Parent.ButtonEffects)
 
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -190,9 +191,14 @@ function InventoryController.addItem(brainrot, slotId)
 		:WaitForChild("ItemsScroll")
 
 	local frame = Instance.new("Frame")
-	frame.Name             = brainrot.Name
-	frame.BackgroundColor3 = NORMAL_COLOR
-	frame.BorderSizePixel  = 0
+	frame.Name              = brainrot.Name
+	frame.BackgroundColor3  = Color3.fromRGB(28, 28, 33)
+	frame.BorderSizePixel   = 0
+	frame.ClipsDescendants  = true
+
+	local frameCorner = Instance.new("UICorner")
+	frameCorner.CornerRadius = UDim.new(0, 8)
+	frameCorner.Parent = frame
 
 	-- Store raw name (with underscores) as attribute — used for model lookup
 	frame:SetAttribute("BrainrotName", brainrot.Name)
@@ -204,36 +210,58 @@ function InventoryController.addItem(brainrot, slotId)
 		frame:SetAttribute("SlotId", slotId)
 	end
 
-	local imageButton = Instance.new("ImageButton")
-	imageButton.Name                 = "ItemButton"
-	imageButton.Size                 = UDim2.new(1, 0, 1, 0)
-	imageButton.BackgroundTransparency = 1
-	imageButton.Image                = brainrot.ImageId
-	imageButton.Parent               = frame
+	-- Image area background (visible as a placeholder when no image is set)
+	local imageArea = Instance.new("Frame")
+	imageArea.Name             = "ImageArea"
+	imageArea.Size             = UDim2.new(1, 0, 0.66, 0)
+	imageArea.Position         = UDim2.new(0, 0, 0, 0)
+	imageArea.BackgroundColor3 = Color3.fromRGB(48, 48, 56)
+	imageArea.BorderSizePixel  = 0
+	imageArea.ZIndex           = 1
+	imageArea.Parent           = frame
 
-	local rarityBar = Instance.new("ImageLabel")
-	rarityBar.Name                   = "RarityBar"
-	rarityBar.Size                   = UDim2.new(1, 0, 0.08, 0)
-	rarityBar.Position               = UDim2.new(0, 0, 0.92, 0)
-	rarityBar.BackgroundColor3       = brainrot.Color
-	rarityBar.BackgroundTransparency = 0.3
-	rarityBar.Image                  = ""
-	rarityBar.ZIndex                 = 2
-	rarityBar.Parent                 = frame
+	-- Actual image displayed inside the image area
+	local imageLabel = Instance.new("ImageLabel")
+	imageLabel.Name                   = "ItemImage"
+	imageLabel.Size                   = UDim2.new(1, 0, 1, 0)
+	imageLabel.BackgroundTransparency = 1
+	imageLabel.Image                  = brainrot.ImageId
+	imageLabel.ScaleType              = Enum.ScaleType.Fit
+	imageLabel.ZIndex                 = 2
+	imageLabel.Parent                 = imageArea
 
-	-- Display name strips underscores for readability
+	-- Thin rarity color accent line separating image from name
+	local accentLine = Instance.new("Frame")
+	accentLine.Name             = "AccentLine"
+	accentLine.Size             = UDim2.new(1, 0, 0.04, 0)
+	accentLine.Position         = UDim2.new(0, 0, 0.66, 0)
+	accentLine.BackgroundColor3 = brainrot.Color
+	accentLine.BorderSizePixel  = 0
+	accentLine.ZIndex           = 2
+	accentLine.Parent           = frame
+
+	-- Name label at the bottom
 	local nameLabel = Instance.new("TextLabel")
 	nameLabel.Name                   = "ItemName"
-	nameLabel.Size                   = UDim2.new(1, 0, 0.25, 0)
-	nameLabel.Position               = UDim2.new(0, 0, 0.67, 0)
-	nameLabel.BackgroundTransparency = 0.4
-	nameLabel.BackgroundColor3       = Color3.fromRGB(0, 0, 0)
+	nameLabel.Size                   = UDim2.new(1, -8, 0.30, 0)
+	nameLabel.Position               = UDim2.new(0, 4, 0.70, 0)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.BorderSizePixel        = 0
 	nameLabel.Text                   = displayName(brainrot.Name)
 	nameLabel.TextColor3             = brainrot.Color
 	nameLabel.TextScaled             = true
 	nameLabel.Font                   = Enum.Font.GothamBold
 	nameLabel.ZIndex                 = 2
 	nameLabel.Parent                 = frame
+
+	-- Full-size invisible button on top — sole click target for the whole frame
+	local imageButton = Instance.new("ImageButton")
+	imageButton.Name                   = "ItemButton"
+	imageButton.Size                   = UDim2.new(1, 0, 1, 0)
+	imageButton.BackgroundTransparency = 1
+	imageButton.Image                  = ""
+	imageButton.ZIndex                 = 3
+	imageButton.Parent                 = frame
 
 	frame.Parent = itemsScroll
 end
@@ -254,6 +282,7 @@ function InventoryController.init()
 		end
 	end)
 
+	ButtonEffects.apply(openButton)
 	openButton.MouseButton1Click:Connect(function()
 		UIManager.open(inventoryFrame)
 	end)
@@ -261,6 +290,7 @@ function InventoryController.init()
 	task.spawn(function()
 		local header     = inventoryFrame:WaitForChild("InventoryHeader")
 		local exitButton = header:WaitForChild("ExitButton")
+		ButtonEffects.applySubtle(exitButton)
 		exitButton.MouseButton1Click:Connect(function()
 			UIManager.close(inventoryFrame)
 		end)
@@ -280,6 +310,7 @@ function InventoryController.init()
 	task.spawn(function()
 		local selectedAura = inventoryFrame:WaitForChild("SelectedAura")
 		equipButton = selectedAura:WaitForChild("EquipButton")
+		ButtonEffects.apply(equipButton)
 		equipButton.MouseButton1Click:Connect(function()
 			if not selectedFrame then return end
 
@@ -305,6 +336,7 @@ function InventoryController.init()
 	task.spawn(function()
 		local selectedAura = inventoryFrame:WaitForChild("SelectedAura")
 		local deleteButton = selectedAura:WaitForChild("DeleteButton")
+		ButtonEffects.apply(deleteButton)
 		deleteButton.MouseButton1Click:Connect(function()
 			if not selectedFrame then return end
 
