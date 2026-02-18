@@ -158,6 +158,14 @@ Money is awarded immediately on spin, regardless of inventory duplication. The r
 - Ownership should be verified server-side and communicated to the client via a RemoteFunction or stored as a player attribute on join
 - Pity counter and all other game logic remain unaffected
 
+### Multiple Equip — TBD Robux (idea)
+- Allows equipping 2+ brainrots simultaneously instead of just 1
+- Each equipped brainrot contributes its full money bonus per spin
+  - Example: Equip one Legendary (75 money) + one Rare (15 money) = 90 money per spin
+- UI: SelectedAura panel shows all equipped items (or a dedicated "Equipped" list)
+- On server: `DataManager.getEquippedBrainrot()` returns array instead of single value; money reward calculation sums all equipped bonuses
+- Implement multi-equip slot limit (e.g., max 3-5 equipped at once) to maintain balance
+
 ## Implementation Philosophy
 
 ### UI / GUI — Always use Roblox Studio
