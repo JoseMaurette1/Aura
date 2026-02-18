@@ -1,11 +1,16 @@
 -- Configuration for all brainrots in the game
 local BrainrotConfig = {}
 
--- Pity system configuration
+-- Pity system configuration (per-tier thresholds)
 BrainrotConfig.PityConfig = {
 	Enabled = true,
-	PityThreshold = 2000,    -- Guarantee a legendary+ after this many rolls
-	MinRarityForPity = 2500  -- Only count brainrots with rarity >= 2500 for pity
+	-- Per-tier: spins without hitting that tier triggers a guarantee
+	Uncommon  = { Threshold = 50,   MinRarity = 75    },  -- dev: 50,   prod: 200
+	Legendary = { Threshold = 300,  MinRarity = 2500  },  -- dev: 300,  prod: 1500
+	Mythic    = { Threshold = 1000, MinRarity = 10000 },  -- dev: 1000, prod: 5000
+	-- Legacy fields kept for RollController pity-shake animation
+	PityThreshold    = 50,
+	MinRarityForPity = 75,
 }
 
 -- Near-miss configuration
@@ -14,6 +19,43 @@ BrainrotConfig.NearMissConfig = {
 	Chance = 0.25,           -- 25% chance to show a near-miss
 	MinRarityToShow = 500    -- Only show near-misses for brainrots with rarity >= 500
 }
+
+-- Rebirth / luck configuration
+local LUCK_SEQUENCE = {0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 3.5}
+local LUCK_CAP = 6.0
+
+-- Returns the luck multiplier for a given rebirthCount (0-indexed), capped at LUCK_CAP
+function BrainrotConfig.getLuck(rebirthCount)
+	local raw
+	if rebirthCount < #LUCK_SEQUENCE then
+		raw = LUCK_SEQUENCE[rebirthCount + 1]
+	else
+		raw = 3.5 + (rebirthCount - (#LUCK_SEQUENCE - 1)) * 0.5
+	end
+	return math.min(raw, LUCK_CAP)
+end
+
+-- Returns the luck multiplier for the next rebirth
+function BrainrotConfig.getNextLuck(rebirthCount)
+	return BrainrotConfig.getLuck(rebirthCount + 1)
+end
+
+-- Returns money earned per spin based on equipped pet's rarity tier.
+-- brainrot = nil means no pet equipped (base income = 1).
+function BrainrotConfig.getMoneyForBrainrot(brainrot)
+	if not brainrot then return 1 end  -- no pet equipped
+	local r = brainrot.Rarity
+	if r <= 25   then return 1  end  -- Common
+	if r <= 100  then return 2  end  -- Uncommon
+	if r <= 1000 then return 5  end  -- Rare
+	if r <= 5000 then return 15 end  -- Legendary
+	return 50                         -- Mythic
+end
+
+-- Returns the cost to rebirth from rebirthCount to rebirthCount+1
+function BrainrotConfig.getRebirthCost(rebirthCount)
+	return math.floor(100 * (1.5 ^ rebirthCount))
+end
 
 -- Brainrot data structure:
 -- {
@@ -1047,26 +1089,31 @@ BrainrotConfig.Brainrots = {
 	},
 }
 
--- Calculate total weight for weighted random selection
-function BrainrotConfig.calculateTotalWeight()
+local COMMON_MAX_RARITY = 25  -- Rarity <= this value is treated as common (no luck bonus)
+
+-- Get a random brainrot based on weighted probability.
+-- luck: multiplier applied to non-common item weights (default 0.25)
+function BrainrotConfig.getRandomBrainrot(luck)
+	luck = luck or 0.25
+
 	local totalWeight = 0
 	for _, brainrot in ipairs(BrainrotConfig.Brainrots) do
-		totalWeight = totalWeight + (1 / brainrot.Rarity)
-	end
-	return totalWeight
-end
-
--- Get a random brainrot based on weighted probability
-function BrainrotConfig.getRandomBrainrot()
-	local totalWeight = BrainrotConfig.calculateTotalWeight()
-	local random = math.random() * totalWeight
-
-	local currentWeight = 0
-	for _, brainrot in ipairs(BrainrotConfig.Brainrots) do
-		currentWeight = currentWeight + (1 / brainrot.Rarity)
-		if random <= currentWeight then
-			return brainrot
+		if brainrot.Rarity <= COMMON_MAX_RARITY then
+			totalWeight += 1 / brainrot.Rarity
+		else
+			totalWeight += luck / brainrot.Rarity
 		end
+	end
+
+	local roll    = math.random() * totalWeight
+	local current = 0
+	for _, brainrot in ipairs(BrainrotConfig.Brainrots) do
+		if brainrot.Rarity <= COMMON_MAX_RARITY then
+			current += 1 / brainrot.Rarity
+		else
+			current += luck / brainrot.Rarity
+		end
+		if roll <= current then return brainrot end
 	end
 
 	return BrainrotConfig.Brainrots[1]
@@ -1093,12 +1140,36 @@ function BrainrotConfig.getRareBrainrots()
 	return rareBrainrots
 end
 
--- Get a guaranteed rare brainrot (for pity)
+-- Get a guaranteed rare brainrot (for uncommon pity)
 function BrainrotConfig.getGuaranteedRareBrainrot()
 	local rareBrainrots = BrainrotConfig.getRareBrainrots()
 	if #rareBrainrots > 0 then
 		return rareBrainrots[math.random(1, #rareBrainrots)]
 	end
+	return BrainrotConfig.Brainrots[#BrainrotConfig.Brainrots]
+end
+
+-- Get a guaranteed legendary-or-better brainrot (for legendary pity)
+function BrainrotConfig.getGuaranteedLegendaryBrainrot()
+	local pool = {}
+	for _, b in ipairs(BrainrotConfig.Brainrots) do
+		if b.Rarity >= BrainrotConfig.PityConfig.Legendary.MinRarity then
+			table.insert(pool, b)
+		end
+	end
+	if #pool > 0 then return pool[math.random(1, #pool)] end
+	return BrainrotConfig.Brainrots[#BrainrotConfig.Brainrots]
+end
+
+-- Get a guaranteed mythic brainrot (for mythic pity)
+function BrainrotConfig.getGuaranteedMythicBrainrot()
+	local pool = {}
+	for _, b in ipairs(BrainrotConfig.Brainrots) do
+		if b.Rarity >= BrainrotConfig.PityConfig.Mythic.MinRarity then
+			table.insert(pool, b)
+		end
+	end
+	if #pool > 0 then return pool[math.random(1, #pool)] end
 	return BrainrotConfig.Brainrots[#BrainrotConfig.Brainrots]
 end
 

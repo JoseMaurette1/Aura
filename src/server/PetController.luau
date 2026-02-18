@@ -5,6 +5,7 @@ local RunService        = game:GetService("RunService")
 local Players           = game:GetService("Players")
 
 local BrainrotConfig = require(ReplicatedStorage.Shared.BrainrotConfig)
+local DataManager    = require(script.Parent.DataManager)
 
 local PetController = {}
 
@@ -289,9 +290,11 @@ end
 EquipRemote.OnServerEvent:Connect(function(player: Player, brainrotName)
 	if brainrotName == nil then
 		removePet(player.UserId)
+		DataManager.setEquippedBrainrot(player, nil)
 		print("[PetController] " .. player.Name .. " unequipped pet")
 	else
 		spawnPet(player, tostring(brainrotName))
+		DataManager.setEquippedBrainrot(player, tostring(brainrotName))
 	end
 end)
 

@@ -18,29 +18,80 @@ SpinRemote.Parent = RemoteEvents
 -- Hand the folder to DataManager so it can append its own remotes and hook PlayerAdded
 DataManager.init(RemoteEvents)
 
+local PITY_CFG = BrainrotConfig.PityConfig
+
 -- ── Spin request ───────────────────────────────────────────────────────────────
 SpinRemote.OnServerEvent:Connect(function(player: Player)
-	local pityCount  = DataManager.getPityCount(player)
+	-- Read all three pity counters
+	local pityUncommon  = DataManager.getPityCount(player)
+	local pityLegendary = DataManager.getPityLegendary(player)
+	local pityMythic    = DataManager.getPityMythic(player)
+
 	local brainrot
 	local isPityDrop = false
+	local luck = BrainrotConfig.getLuck(DataManager.getRebirthCount(player))
 
-	-- Pity guarantee
-	if BrainrotConfig.PityConfig.Enabled and pityCount >= BrainrotConfig.PityConfig.PityThreshold then
-		brainrot     = BrainrotConfig.getGuaranteedRareBrainrot()
-		isPityDrop   = true
-		DataManager.setPityCount(player, 0)
-		print("[Server] " .. player.Name .. " hit pity! Got: " .. brainrot.Name)
+	-- Check pity triggers highest-tier first so mythic pity beats legendary pity etc.
+	if PITY_CFG.Enabled and pityMythic >= PITY_CFG.Mythic.Threshold then
+		brainrot    = BrainrotConfig.getGuaranteedMythicBrainrot()
+		isPityDrop  = true
+		pityUncommon  = 0
+		pityLegendary = 0
+		pityMythic    = 0
+		print("[Server] " .. player.Name .. " hit MYTHIC pity! Got: " .. brainrot.Name)
+
+	elseif PITY_CFG.Enabled and pityLegendary >= PITY_CFG.Legendary.Threshold then
+		brainrot    = BrainrotConfig.getGuaranteedLegendaryBrainrot()
+		isPityDrop  = true
+		pityUncommon  = 0
+		pityLegendary = 0
+		-- mythic counter keeps running (legendary doesn't satisfy mythic pity)
+		pityMythic    = pityMythic + 1
+		print("[Server] " .. player.Name .. " hit LEGENDARY pity! Got: " .. brainrot.Name)
+
+	elseif PITY_CFG.Enabled and pityUncommon >= PITY_CFG.Uncommon.Threshold then
+		brainrot    = BrainrotConfig.getGuaranteedRareBrainrot()
+		isPityDrop  = true
+		pityUncommon  = 0
+		-- legendary/mythic counters keep running
+		pityLegendary = pityLegendary + 1
+		pityMythic    = pityMythic    + 1
+		print("[Server] " .. player.Name .. " hit UNCOMMON pity! Got: " .. brainrot.Name)
+
 	else
-		brainrot   = BrainrotConfig.getRandomBrainrot()
-		pityCount  = pityCount + 1
+		brainrot = BrainrotConfig.getRandomBrainrot(luck)
+		local r  = brainrot.Rarity
 
-		if BrainrotConfig.countsForPityReset(brainrot) then
-			pityCount = 0
-			print("[Server] " .. player.Name .. " got rare naturally — pity reset.")
+		if r >= PITY_CFG.Mythic.MinRarity then
+			-- Mythic: resets all counters
+			pityUncommon  = 0
+			pityLegendary = 0
+			pityMythic    = 0
+			print("[Server] " .. player.Name .. " got MYTHIC naturally — all pity reset.")
+		elseif r >= PITY_CFG.Legendary.MinRarity then
+			-- Legendary: resets uncommon + legendary, mythic keeps going
+			pityUncommon  = 0
+			pityLegendary = 0
+			pityMythic    = pityMythic + 1
+			print("[Server] " .. player.Name .. " got LEGENDARY naturally — uncommon/legendary pity reset.")
+		elseif r >= PITY_CFG.Uncommon.MinRarity then
+			-- Uncommon: resets only uncommon counter
+			pityUncommon  = 0
+			pityLegendary = pityLegendary + 1
+			pityMythic    = pityMythic    + 1
+			print("[Server] " .. player.Name .. " got UNCOMMON naturally — uncommon pity reset.")
+		else
+			-- Common: all counters increment
+			pityUncommon  = pityUncommon  + 1
+			pityLegendary = pityLegendary + 1
+			pityMythic    = pityMythic    + 1
 		end
-
-		DataManager.setPityCount(player, pityCount)
 	end
+
+	-- Persist updated counters
+	DataManager.setPityCount(player,    pityUncommon)
+	DataManager.setPityLegendary(player, pityLegendary)
+	DataManager.setPityMythic(player,    pityMythic)
 
 	-- Near-miss check
 	local shouldShowNearMiss = false
@@ -55,23 +106,34 @@ SpinRemote.OnServerEvent:Connect(function(player: Player)
 		end
 	end
 
-	-- Persist the new item and award money
-	local slotId = DataManager.addItem(player, brainrot.Name)
-	DataManager.addMoney(player, brainrot.MoneyReward)
+	-- Persist item and award money
+	local slotId          = DataManager.addItem(player, brainrot.Name)
+	local equippedName    = DataManager.getEquippedBrainrot(player)
+	local equippedBrainrot = equippedName and BrainrotConfig.getBrainrotByName(equippedName) or nil
+	local moneyReward     = BrainrotConfig.getMoneyForBrainrot(equippedBrainrot)
+	DataManager.addMoney(player, moneyReward)
 
-	local currentPity = DataManager.getPityCount(player)
 	print("[Server] " .. player.Name .. " rolled " .. brainrot.Name
-		.. " (1/" .. brainrot.Rarity .. ") | Pity: "
-		.. currentPity .. "/" .. BrainrotConfig.PityConfig.PityThreshold)
+		.. " (1/" .. brainrot.Rarity .. ")"
+		.. " | U:" .. pityUncommon .. "/" .. PITY_CFG.Uncommon.Threshold
+		.. " L:" .. pityLegendary  .. "/" .. PITY_CFG.Legendary.Threshold
+		.. " M:" .. pityMythic     .. "/" .. PITY_CFG.Mythic.Threshold)
 
 	SpinRemote:FireClient(player, {
-		Result          = brainrot,
-		SlotId          = slotId,
-		NearMiss        = shouldShowNearMiss,
+		Result           = brainrot,
+		SlotId           = slotId,
+		NearMiss         = shouldShowNearMiss,
 		NearMissBrainrot = nearMissBrainrot,
-		PityCounter     = currentPity,
-		PityMax         = BrainrotConfig.PityConfig.PityThreshold,
-		IsPityDrop      = isPityDrop,
+		IsPityDrop       = isPityDrop,
+		-- Per-tier pity state for the UI bars
+		Pity = {
+			uncommonCount  = pityUncommon,
+			uncommonMax    = PITY_CFG.Uncommon.Threshold,
+			legendaryCount = pityLegendary,
+			legendaryMax   = PITY_CFG.Legendary.Threshold,
+			mythicCount    = pityMythic,
+			mythicMax      = PITY_CFG.Mythic.Threshold,
+		},
 	})
 end)
 

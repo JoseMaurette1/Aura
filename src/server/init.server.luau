@@ -7,3 +7,15 @@ print("[Server] Spin Handler loaded")
 -- Initialize Pet Controller — adds EquipRemote to the existing RemoteEvents folder
 local PetController = require(script.PetController)
 print("[Server] Pet Controller loaded")
+
+-- Initialize Rebirth Handler — adds RebirthRemote to the existing RemoteEvents folder
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local remoteEventsFolder = ReplicatedStorage:WaitForChild("RemoteEvents")
+local RebirthHandler = require(script.RebirthHandler)
+RebirthHandler.init(remoteEventsFolder)
+print("[Server] Rebirth Handler loaded")
+
+-- Initialize Gamepass Handler — checks/grants AutoClick pass on join and purchase
+local GamepassHandler = require(script.GamepassHandler)
+GamepassHandler.init()
+print("[Server] Gamepass Handler loaded")

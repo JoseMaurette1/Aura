@@ -47,8 +47,7 @@ function RollController.init()
 
 	pityLabel.Text = "0/" .. PITY_MAX
 
-	rollButton.MouseButton1Click:Connect(function()
-		if not rollButton.Active then return end  -- locked during spin
+	function RollController.onRoll()
 		if pityActive then
 			pityActive = false
 			pityCount = 0
@@ -66,6 +65,11 @@ function RollController.init()
 			rollButton.BackgroundColor3 = PITY_COLOR
 			shakeButtonLoop(rollButton, function() return pityActive end)
 		end
+	end
+
+	rollButton.MouseButton1Click:Connect(function()
+		if not rollButton.Active then return end  -- locked during spin
+		RollController.onRoll()
 	end)
 
 	print("[Client] Roll Controller initialized")

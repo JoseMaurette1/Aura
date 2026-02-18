@@ -19,3 +19,15 @@ ShopController.init()
 -- Initialize Rebirth Controller
 local RebirthController = require(script.RebirthController)
 RebirthController.init()
+
+-- Initialize Invite Controller
+local InviteController = require(script.InviteController)
+InviteController.init()
+
+-- Initialize Settings Controller
+local SettingsController = require(script.SettingsController)
+SettingsController.init()
+
+-- Initialize Auto Click Controller
+local AutoClickController = require(script.AutoClickController)
+AutoClickController.init()

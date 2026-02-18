@@ -104,6 +104,32 @@ ScreenGui
 - 25% chance, only for non-rare drops
 - Config lives in BrainrotConfig.NearMissConfig
 
+### Currency & Progression System
+**Rarity-Based Money Rewards (per drop)**
+- Common (rarity ≤ 25): +1 money
+- Uncommon (rarity ≤ 100): +3 money
+- Rare (rarity ≤ 1000): +15 money
+- Legendary (rarity ≤ 5000): +75 money
+- Mythic (rarity > 5000): +300 money
+
+Money is awarded immediately on spin, regardless of inventory duplication. The reward is based on rarity tier, not the unused `MoneyReward` field in BrainrotConfig.
+
+**Rebirth (Prestige) System**
+- Rebirth cost scales exponentially: `cost = floor(100 * 1.5 ^ rebirthCount)`
+  - 0 → 1: 100, 1 → 2: 150, 2 → 3: 225, ... 10 → 11: ~5,766
+- Rebirth **resets money to 0** (intentional sacrifice—players commit to the prestige choice)
+- Rebirth increments `rebirthCount` and unlocks better luck on next spins
+- UI shows current money / next rebirth cost and luck multipliers (before → after)
+
+**Luck Cap**
+- `getLuck(rebirthCount)` is capped at 6.0x to prevent late-game triviality
+- Even at very high rebirth counts, luck multiplier will never exceed 6.0x
+- Rebirth remains valuable for cost-of-rebirth milestones (badges, cosmetics in future) and for bragging rights
+
+**Endgame Goals** (documented, not yet implemented)
+- **Primary**: Collect all brainrots (Brainrot Dex complete)
+- **Secondary**: Reach rebirth milestone (target TBD, e.g. 25 or 50)
+
 ## Pet / Model System
 
 ### Storage Architecture

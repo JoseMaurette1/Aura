@@ -4,6 +4,7 @@ local TweenService      = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BrainrotConfig = require(ReplicatedStorage.Shared.BrainrotConfig)
+local UIManager      = require(script.Parent.UIManager)
 
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -28,6 +29,7 @@ local equippedFrame  = nil  -- frame in ItemsScroll that is currently equipped
 local auraPic     = nil
 local auraName    = nil
 local auraRarity  = nil
+local auraRewards = nil
 local equipButton = nil
 
 -- Strip underscores for display only; internal Name/ModelName stays unchanged
@@ -86,6 +88,7 @@ local function clearSelectedAuraPanel()
 	if auraPic    then auraPic.Image   = ""  end
 	if auraName   then auraName.Text   = ""  end
 	if auraRarity then auraRarity.Text = ""  end
+	if auraRewards then auraRewards.Text = ""  end
 	updateEquipButton()
 end
 
@@ -100,6 +103,17 @@ local function updateSelectedAuraPanel(frame: Frame)
 	auraRarity.Text     = "1 in " .. (frame:GetAttribute("Rarity") or 0)
 	auraName.TextColor3   = Color3.new(1, 1, 1)
 	auraRarity.TextColor3 = Color3.new(1, 1, 1)
+
+	-- Get money reward from brainrot data
+	if auraRewards then
+		local brainrotName = frame:GetAttribute("BrainrotName")
+		local brainrot = BrainrotConfig.getBrainrotByName(brainrotName)
+		if brainrot then
+			local money = BrainrotConfig.getMoneyForBrainrot(brainrot)
+			auraRewards.Text = "+" .. money
+			auraRewards.TextColor3 = Color3.new(1, 1, 1)
+		end
+	end
 
 	local nameStroke   = auraName:FindFirstChildWhichIsA("UIStroke")
 	local rarityStroke = auraRarity:FindFirstChildWhichIsA("UIStroke")
@@ -231,30 +245,35 @@ function InventoryController.init()
 
 	inventoryFrame.Visible = false
 
+	-- Clear selection whenever the inventory is hidden (exit button or UIManager switching panels)
+	inventoryFrame:GetPropertyChangedSignal("Visible"):Connect(function()
+		if not inventoryFrame.Visible and selectedFrame then
+			clearStroke(selectedFrame)
+			selectedFrame = nil
+			clearSelectedAuraPanel()
+		end
+	end)
+
 	openButton.MouseButton1Click:Connect(function()
-		inventoryFrame.Visible = true
+		UIManager.open(inventoryFrame)
 	end)
 
 	task.spawn(function()
 		local header     = inventoryFrame:WaitForChild("InventoryHeader")
 		local exitButton = header:WaitForChild("ExitButton")
 		exitButton.MouseButton1Click:Connect(function()
-			inventoryFrame.Visible = false
-			if selectedFrame then
-				clearStroke(selectedFrame)
-				selectedFrame = nil
-				clearSelectedAuraPanel()
-			end
+			UIManager.close(inventoryFrame)
 		end)
 	end)
 
-	-- Wire up SelectedAura display (BrainrotPic, SelectedName, SelectedRarity)
+	-- Wire up SelectedAura display (BrainrotPic, SelectedName, SelectedRarity, SelectedRewards)
 	task.spawn(function()
 		local selectedAura = inventoryFrame:WaitForChild("SelectedAura")
 		local auraFrame    = selectedAura:WaitForChild("Frame")
 		auraPic    = auraFrame:WaitForChild("BrainrotPic")
 		auraName   = auraFrame:WaitForChild("SelectedName")
 		auraRarity = auraFrame:WaitForChild("SelectedRarity")
+		auraRewards = auraFrame:WaitForChild("SelectedRewards")
 	end)
 
 	-- Wire up EquipButton independently so it never blocks DeleteButton

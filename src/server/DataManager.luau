@@ -7,11 +7,20 @@ local STORE_NAME = "PlayerData_v1"
 local dataStore  = DataStoreService:GetDataStore(STORE_NAME)
 
 -- In-memory cache per player
--- [userId] = { inventory: {[slotId] = name}, nextSlotId: N, money: N, pityCount: N }
+-- [userId] = { inventory, nextSlotId, money, pityCount, pityLegendary, pityMythic, rebirthCount, equippedBrainrot }
 local cache = {}
 
 local function defaultData()
-	return { inventory = {}, nextSlotId = 1, money = 0, pityCount = 0 }
+	return {
+		inventory       = {},
+		nextSlotId      = 1,
+		money           = 0,
+		pityCount       = 0,   -- spins since last uncommon+ (uncommon pity)
+		pityLegendary   = 0,   -- spins since last legendary+
+		pityMythic      = 0,   -- spins since last mythic
+		rebirthCount    = 0,
+		equippedBrainrot = nil,
+	}
 end
 
 -- Flatten sparse slot dict to a sorted array for JSON-safe serialization
@@ -27,14 +36,24 @@ local function serializeData(data)
 		table.insert(invArray, entry.name)
 	end
 
-	return { inventory = invArray, money = data.money, pityCount = data.pityCount }
+	return {
+		inventory     = invArray,
+		money         = data.money,
+		pityCount     = data.pityCount,
+		pityLegendary = data.pityLegendary,
+		pityMythic    = data.pityMythic,
+		rebirthCount  = data.rebirthCount,
+	}
 end
 
 -- Rebuild in-memory struct from raw DataStore table
 local function deserializeData(raw)
 	local data = defaultData()
-	data.money     = raw.money     or 0
-	data.pityCount = raw.pityCount or 0
+	data.money          = raw.money          or 0
+	data.pityCount      = raw.pityCount      or 0
+	data.pityLegendary  = raw.pityLegendary  or 0
+	data.pityMythic     = raw.pityMythic     or 0
+	data.rebirthCount   = raw.rebirthCount   or 0
 
 	if raw.inventory then
 		for i, name in ipairs(raw.inventory) do
@@ -51,6 +70,14 @@ local function updateLeaderstats(player, money)
 	if ls then
 		local mv = ls:FindFirstChild("Money")
 		if mv then mv.Value = money end
+	end
+end
+
+local function updateRebirthLeaderstats(player, rebirthCount)
+	local ls = player:FindFirstChild("leaderstats")
+	if ls then
+		local rv = ls:FindFirstChild("Rebirths")
+		if rv then rv.Value = rebirthCount end
 	end
 end
 
@@ -71,10 +98,14 @@ local DataManager = {}
 
 -- Call this once from SpinHandler after it creates the RemoteEvents folder
 function DataManager.init(remoteEventsFolder)
-	-- Create the two remotes this module owns
+	-- Create the remotes this module owns
 	local loadRemote = Instance.new("RemoteEvent")
 	loadRemote.Name  = "LoadInventoryRemote"
 	loadRemote.Parent = remoteEventsFolder
+
+	local pityLoadRemote = Instance.new("RemoteEvent")
+	pityLoadRemote.Name  = "PityLoadRemote"
+	pityLoadRemote.Parent = remoteEventsFolder
 
 	local deleteRemote = Instance.new("RemoteEvent")
 	deleteRemote.Name  = "DeleteItemRemote"
@@ -94,6 +125,11 @@ function DataManager.init(remoteEventsFolder)
 		moneyValue.Value  = 0
 		moneyValue.Parent = leaderstats
 
+		local rebirthsValue = Instance.new("IntValue")
+		rebirthsValue.Name   = "Rebirths"
+		rebirthsValue.Value  = 0
+		rebirthsValue.Parent = leaderstats
+
 		-- Load from DataStore (yields — that's fine, we're in a PlayerAdded handler)
 		local ok, raw = pcall(function()
 			return dataStore:GetAsync(userId)
@@ -110,7 +146,8 @@ function DataManager.init(remoteEventsFolder)
 		end
 
 		cache[userId] = data
-		moneyValue.Value = data.money
+		moneyValue.Value    = data.money
+		rebirthsValue.Value = data.rebirthCount
 
 		-- Send saved inventory to client as {slotId, name} pairs
 		local loadList = {}
@@ -121,6 +158,17 @@ function DataManager.init(remoteEventsFolder)
 		table.sort(loadList, function(a, b) return a.slotId < b.slotId end)
 
 		loadRemote:FireClient(player, loadList)
+
+		-- Send initial pity counts so the UI bars show correct values on join
+		pityLoadRemote:FireClient(player, {
+			uncommonCount  = data.pityCount,
+			uncommonMax    = 50,
+			legendaryCount = data.pityLegendary,
+			legendaryMax   = 300,
+			mythicCount    = data.pityMythic,
+			mythicMax      = 1000,
+		})
+
 		print("[DataManager] Loaded " .. #loadList .. " items for " .. player.Name)
 	end)
 
@@ -148,15 +196,30 @@ function DataManager.init(remoteEventsFolder)
 	end)
 end
 
--- Add a new item; returns the slotId the client should store on its frame
+-- Add a new item; returns the slotId the client should store on its frame.
+-- Returns nil if inventory is full (100-slot cap).
 function DataManager.addItem(player, brainrotName)
 	local data = cache[tostring(player.UserId)]
 	if not data then return nil end
+
+	local count = 0
+	for _ in pairs(data.inventory) do count += 1 end
+	if count >= 100 then return nil end
 
 	local slotId            = data.nextSlotId
 	data.inventory[slotId]  = brainrotName
 	data.nextSlotId         = slotId + 1
 	return slotId
+end
+
+function DataManager.setEquippedBrainrot(player, brainrotName)
+	local data = cache[tostring(player.UserId)]
+	if data then data.equippedBrainrot = brainrotName end
+end
+
+function DataManager.getEquippedBrainrot(player)
+	local data = cache[tostring(player.UserId)]
+	return data and data.equippedBrainrot or nil
 end
 
 function DataManager.addMoney(player, amount)
@@ -180,6 +243,45 @@ end
 function DataManager.setPityCount(player, count)
 	local data = cache[tostring(player.UserId)]
 	if data then data.pityCount = count end
+end
+
+function DataManager.getPityLegendary(player)
+	local data = cache[tostring(player.UserId)]
+	return data and data.pityLegendary or 0
+end
+
+function DataManager.setPityLegendary(player, count)
+	local data = cache[tostring(player.UserId)]
+	if data then data.pityLegendary = count end
+end
+
+function DataManager.getPityMythic(player)
+	local data = cache[tostring(player.UserId)]
+	return data and data.pityMythic or 0
+end
+
+function DataManager.setPityMythic(player, count)
+	local data = cache[tostring(player.UserId)]
+	if data then data.pityMythic = count end
+end
+
+function DataManager.getRebirthCount(player)
+	local data = cache[tostring(player.UserId)]
+	return data and data.rebirthCount or 0
+end
+
+function DataManager.setRebirthCount(player, count)
+	local data = cache[tostring(player.UserId)]
+	if not data then return end
+	data.rebirthCount = count
+	updateRebirthLeaderstats(player, count)
+end
+
+function DataManager.resetMoney(player)
+	local data = cache[tostring(player.UserId)]
+	if not data then return end
+	data.money = 0
+	updateLeaderstats(player, 0)
 end
 
 return DataManager

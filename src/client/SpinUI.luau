@@ -6,9 +6,14 @@ local TweenService = game:GetService("TweenService")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-local BrainrotConfig = require(ReplicatedStorage.Shared.BrainrotConfig)
+local BrainrotConfig      = require(ReplicatedStorage.Shared.BrainrotConfig)
 local InventoryController = require(script.Parent.InventoryController)
-local SpinRemote = ReplicatedStorage:WaitForChild("RemoteEvents"):WaitForChild("SpinRemote")
+local SettingsController  = require(script.Parent.SettingsController)
+
+local RemoteEvents     = ReplicatedStorage:WaitForChild("RemoteEvents")
+local SpinRemote       = RemoteEvents:WaitForChild("SpinRemote")
+local DeleteItemRemote = RemoteEvents:WaitForChild("DeleteItemRemote")
+local PityLoadRemote   = RemoteEvents:WaitForChild("PityLoadRemote")
 
 local SpinUI = {}
 SpinUI.IsSpinning = false
@@ -46,25 +51,46 @@ function SpinUI.init()
 	local nameStroke = brainrotName:WaitForChild("BrainrotNameStroke")
 	local rarityStroke = brainrotRarity:WaitForChild("BrainrotRarityStroke")
 
+	-- Pity bars
+	local pityFrame       = screenGui:WaitForChild("PityFrame")
+	local uncommonBar     = pityFrame:WaitForChild("UncommonBar")
+	local legendaryBar    = pityFrame:WaitForChild("LegendaryBar")
+	local mythicBar       = pityFrame:WaitForChild("MythicBar")
+	local uncommonProgress  = uncommonBar:WaitForChild("UncommonProgress")
+	local legendaryProgress = legendaryBar:WaitForChild("LegendaryProgress")
+	local mythicProgress    = mythicBar:WaitForChild("MythicProgress")
+
+	local function updatePityBars(pity)
+		uncommonProgress.Text  = pity.uncommonCount  .. " / " .. pity.uncommonMax
+		legendaryProgress.Text = pity.legendaryCount .. " / " .. pity.legendaryMax
+		mythicProgress.Text    = pity.mythicCount    .. " / " .. pity.mythicMax
+	end
+
+	-- Set initial pity values as soon as server sends them on join
+	PityLoadRemote.OnClientEvent:Connect(updatePityBars)
+
 	local landedSize = brainrotName.TextSize
 
 	spinningFrame.Visible = false
 
-	rollButton.MouseButton1Click:Connect(function()
+	function SpinUI.triggerSpin()
 		if SpinUI.IsSpinning then return end
 		SpinUI.IsSpinning = true
-		rollButton.Active = false  -- blocks clicks AND stops RollController counter
+		rollButton.Active = false
 
 		brainrotName.Text = "???"
 		brainrotRarity.Text = "???"
 		spinningFrame.Visible = true
 
 		SpinRemote:FireServer()
-	end)
+	end
+
+	rollButton.MouseButton1Click:Connect(SpinUI.triggerSpin)
 
 	SpinRemote.OnClientEvent:Connect(function(data)
 		local result = data.Result
 		local slotId = data.SlotId
+		if data.Pity then updatePityBars(data.Pity) end
 
 		task.spawn(function()
 			local totalDuration = 5
@@ -118,7 +144,14 @@ function SpinUI.init()
 
 			-- Shake then instantly hide
 			shakeFrame(spinningFrame)
-			InventoryController.addItem(result, slotId)
+			if slotId then
+				if SettingsController.shouldAutoDelete(result) then
+					-- Auto-delete: remove from server data and skip inventory
+					DeleteItemRemote:FireServer(slotId)
+				else
+					InventoryController.addItem(result, slotId)
+				end
+			end
 			spinningFrame.Visible = false
 			rollButton.Active = true
 			SpinUI.IsSpinning = false
