@@ -166,7 +166,61 @@ Money is awarded immediately on spin, regardless of inventory duplication. The r
 - On server: `DataManager.getEquippedBrainrot()` returns array instead of single value; money reward calculation sums all equipped bonuses
 - Implement multi-equip slot limit (e.g., max 3-5 equipped at once) to maintain balance
 
+## UI Color Palette
+
+These are the **only** color schemes used across the project. Never introduce purple, violet, lavender, or any other color not listed here — purple is a common AI-generated default and is explicitly banned.
+
+### Established Colors
+
+| Role | Color | RGB |
+|------|-------|-----|
+| **Green — primary panels/headers** | Medium green | `RGB(45, 155, 85)` |
+| **Green — panel background** | Mint / light green | `RGB(200, 235, 215)` |
+| **Green — gradient top** | Bright mint | `RGB(215, 245, 228)` |
+| **Green — gradient bottom** | Deeper mint | `RGB(185, 225, 205)` |
+| **Green — action button** | Vivid green | `RGB(55, 180, 100)` |
+| **Blue — panel background** | Light sky blue | `RGB(195, 228, 255)` |
+| **Blue — header/accent** | Medium blue | `RGB(80, 160, 230)` |
+| **Blue — settings** | Solid blue | `RGB(44, 128, 255)` |
+| **Red — destructive / exit** | Vivid red | `RGB(200, 50, 70)` |
+| **White text** | Labels on dark/colored backgrounds | `RGB(255, 255, 255)` |
+| **Dark text** | Labels on light backgrounds | `RGB(25, 90, 50)` (dark green) |
+
+### Rules
+- **SpinningFrame** uses the dark semi-transparent overlay style (no color tint — neutral dark)
+- **InventoryGUI** uses the green scheme
+- **CodesGUI** uses the blue scheme
+- **SettingsGUI** uses the blue scheme (`RGB(44, 128, 255)`)
+- **All exit buttons** are red (`RGB(200, 50, 70)`) with a gradient
+- **All delete buttons** are red (`RGB(200, 50, 70)`)
+- **All confirm/equip/yes buttons** are green (`RGB(55, 180, 100)`)
+- **Never use purple, violet, or lavender anywhere in the UI**
+
+---
+
 ## Implementation Philosophy
+
+### Rojo Workflow — How Code Changes Are Made
+This project uses **Rojo** to sync files from disk into Roblox Studio. This is the single most important thing to understand about the dev workflow.
+
+**The golden rule: all script changes happen on disk, never inside Studio's script editor.**
+
+- All `.luau` files live under `src/` on disk. Rojo watches this folder and syncs changes into Studio automatically.
+- **Never edit scripts inside Studio's script editor.** The next Rojo sync will overwrite any Studio-side edits with the disk version, losing your work.
+- When creating a **new script**, create the `.luau` file in the correct `src/` subdirectory on disk. If needed, update `default.project.json` to map it to the right Studio location, then Rojo will sync it in.
+- When Claude writes or edits code, it edits the files on disk (`src/`). Rojo handles getting them into Studio.
+- **Non-script instances** (Frames, Buttons, Models, etc.) are NOT managed by Rojo — they live in the `.rbxl` place file and are built/edited directly in Studio.
+
+**What Rojo manages (disk → Studio):**
+- Everything under `src/client/`, `src/server/`, `src/shared/`
+- Mapped via `default.project.json`
+
+**What Rojo does NOT manage (Studio only):**
+- All ScreenGui UI hierarchy (Frames, Buttons, Labels, etc.)
+- `ServerStorage/Brainrots/` models
+- Any other non-script instances placed in Studio
+
+---
 
 ### UI / GUI — Always use Roblox Studio
 Any visual element that can be built in Studio **must** be built in Studio, not in code. This produces better results and is faster to iterate on.
@@ -177,14 +231,14 @@ Any visual element that can be built in Studio **must** be built in Studio, not 
 - Static UI hierarchy — if a frame always exists, build it in Studio
 - Animations done via AnimationEditor or Tweens triggered from code but designed visually first
 
-**Do in code:**
+**Do in code (on disk via Rojo):**
 - Dynamically created UI that cannot exist at edit time (e.g. inventory item frames spawned per roll result, equipped badges added at runtime)
 - Reading/writing UI state (`.Text`, `.Visible`, `.Image`, colors driven by data)
 - Connecting events (`.MouseButton1Click`, `.Changed`, etc.)
 - Tweens and programmatic animations that respond to gameplay events
 - Anything driven by server data or player actions
 
-**When a new UI feature is needed:** always tell the user what to build in Studio first (hierarchy, element names, properties), then write only the code that wires it up. Never recreate in code what Studio can do visually.
+**When a new UI feature is needed:** tell the user what to build in Studio first (hierarchy, element names, properties), then write only the code that wires it up on disk. Never recreate in code what Studio can do visually.
 
 ## Code Style
 - Use .luau file extension

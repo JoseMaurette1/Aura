@@ -9,7 +9,10 @@
       "Bash(ls:*)",
       "Bash(claude mcp list:*)",
       "Bash(npx:*)",
-      "Bash(pkill:*)"
+      "Bash(pkill:*)",
+      "mcp__robloxstudio__get_place_info",
+      "mcp__Roblox_Studio__get_studio_mode",
+      "Bash(lsof:*)"
     ]
   }
 }

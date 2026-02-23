@@ -1,0 +1,6 @@
+{
+  "robloxstudio": {
+    "command": "npx",
+    "args": ["-y", "robloxstudio-mcp@latest"]
+  }
+}

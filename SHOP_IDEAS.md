@@ -22,7 +22,7 @@
 ---
 
 ## OP Pack
-- **Price:** 300 Robux
+- **Price:** 500 Robux
 - **Contains:** 3 brainrots
 - **Rarity:** ~1/100,000 each
 

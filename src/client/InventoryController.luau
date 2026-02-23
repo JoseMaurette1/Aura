@@ -13,13 +13,13 @@ local playerGui = player:WaitForChild("PlayerGui")
 local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
 
 -- Wait for remotes (all created by server on startup)
-local EquipRemote        = RemoteEvents:WaitForChild("EquipRemote")
-local DeleteItemRemote   = RemoteEvents:WaitForChild("DeleteItemRemote")
+local EquipRemote         = RemoteEvents:WaitForChild("EquipRemote")
+local DeleteItemRemote    = RemoteEvents:WaitForChild("DeleteItemRemote")
 local LoadInventoryRemote = RemoteEvents:WaitForChild("LoadInventoryRemote")
 
 local SELECTED_THICKNESS = 3
-local HOVER_COLOR        = Color3.fromRGB(60, 60, 60)
-local NORMAL_COLOR       = Color3.fromRGB(35, 35, 35)
+local HOVER_COLOR        = Color3.fromRGB(40, 40, 50)
+local NORMAL_COLOR       = Color3.fromRGB(22, 22, 30)
 
 local InventoryController = {}
 
@@ -27,11 +27,12 @@ local selectedFrame  = nil  -- currently selected inventory frame
 local equippedFrame  = nil  -- frame in ItemsScroll that is currently equipped
 
 -- SelectedAura panel references (assigned during init)
-local auraPic     = nil
-local auraName    = nil
-local auraRarity  = nil
-local auraRewards = nil
-local equipButton = nil
+local auraPic        = nil
+local auraName       = nil
+local auraRarity     = nil
+local auraRewards    = nil
+local equipButton    = nil
+local selectedViewport = nil  -- ViewportFrame inside SelectedAura for 3D preview
 
 -- Strip underscores for display only; internal Name/ModelName stays unchanged
 local function displayName(name: string): string
@@ -44,6 +45,60 @@ local function strokeColor(color: Color3): Color3
 	return lum > 0.7 and Color3.new(0, 0, 0) or color
 end
 
+-- Shared helper: centers a model at world origin, creates a camera, and parents
+-- it into the given ViewportFrame. Runs async inside task.spawn.
+local function loadModelIntoViewport(viewportFrame, modelName)
+	-- Clear any existing model/camera from a previous call
+	for _, child in ipairs(viewportFrame:GetChildren()) do
+		child:Destroy()
+	end
+
+	if not modelName then return end
+
+	task.spawn(function()
+		local brainrotsFolder = ReplicatedStorage:FindFirstChild("Brainrots")
+		if not brainrotsFolder then return end
+
+		local modelTemplate = brainrotsFolder:FindFirstChild(modelName)
+		if not modelTemplate then return end
+
+		local modelClone = modelTemplate:Clone()
+		modelClone.Parent = viewportFrame
+
+		-- Get bounding box BEFORE moving, so we know true center and size
+		local bboxCF, bboxSize = modelClone:GetBoundingBox()
+		local bboxCenter = bboxCF.Position
+		local maxDim     = math.max(bboxSize.X, bboxSize.Y, bboxSize.Z)
+
+		-- Move model so its bounding box center sits at the world origin
+		if modelClone.PrimaryPart then
+			local pivotPos    = modelClone:GetPivot().Position
+			local newPivotPos = pivotPos - bboxCenter
+			modelClone:PivotTo(CFrame.new(newPivotPos))
+		else
+			-- No PrimaryPart — shift all BaseParts manually
+			local offset = -bboxCenter
+			for _, part in ipairs(modelClone:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.CFrame = part.CFrame + offset
+				end
+			end
+		end
+
+		-- Create camera and auto-fit based on model size
+		local camera = Instance.new("Camera")
+		camera.Parent               = viewportFrame
+		viewportFrame.CurrentCamera = camera
+
+		-- Models face -Z in Roblox, so camera goes on the -Z side.
+		-- X = 0 keeps the model centered (no left/right offset).
+		local dist   = maxDim * 0.8
+		local camPos = Vector3.new(0, dist * 0.35, -dist)
+		local lookAt = Vector3.new(0, bboxSize.Y * 0.1, 0)
+		camera.CFrame = CFrame.lookAt(camPos, lookAt)
+	end)
+end
+
 -- Add a small "EQUIPPED" badge to the top of an inventory frame
 local function applyEquippedBadge(frame: Frame)
 	if frame:FindFirstChild("EquippedBadge") then return end
@@ -51,12 +106,12 @@ local function applyEquippedBadge(frame: Frame)
 
 	local badge = Instance.new("Frame")
 	badge.Name               = "EquippedBadge"
-	badge.Size               = UDim2.new(1, 0, 0.2, 0)
+	badge.Size               = UDim2.new(1, 0, 0.18, 0)
 	badge.Position           = UDim2.new(0, 0, 0, 0)
 	badge.BackgroundColor3   = Color3.new(0, 0, 0)
-	badge.BackgroundTransparency = 0.3
+	badge.BackgroundTransparency = 0.25
 	badge.BorderSizePixel    = 0
-	badge.ZIndex             = 3
+	badge.ZIndex             = 5
 	badge.Parent             = frame
 
 	local label = Instance.new("TextLabel")
@@ -66,7 +121,7 @@ local function applyEquippedBadge(frame: Frame)
 	label.TextColor3         = color
 	label.TextScaled         = true
 	label.Font               = Enum.Font.GothamBold
-	label.ZIndex             = 4
+	label.ZIndex             = 6
 	label.Parent             = badge
 end
 
@@ -87,9 +142,14 @@ end
 
 local function clearSelectedAuraPanel()
 	if auraPic    then auraPic.Image   = ""  end
+	if selectedViewport then
+		for _, child in ipairs(selectedViewport:GetChildren()) do
+			child:Destroy()
+		end
+	end
 	if auraName   then auraName.Text   = ""  end
 	if auraRarity then auraRarity.Text = ""  end
-	if auraRewards then auraRewards.Text = ""  end
+	if auraRewards then auraRewards.Text = "" end
 	updateEquipButton()
 end
 
@@ -99,9 +159,9 @@ local function updateSelectedAuraPanel(frame: Frame)
 	local color  = frame:GetAttribute("Color") or Color3.new(1, 1, 1)
 	local stroke = strokeColor(color)
 
-	auraPic.Image       = frame:GetAttribute("ImageId") or ""
-	auraName.Text       = displayName(frame:GetAttribute("BrainrotName") or "")
-	auraRarity.Text     = "1 in " .. (frame:GetAttribute("Rarity") or 0)
+	auraPic.Image         = ""  -- viewport handles display; keep Image blank
+	auraName.Text         = displayName(frame:GetAttribute("BrainrotName") or "")
+	auraRarity.Text       = "1 in " .. (frame:GetAttribute("Rarity") or 0)
 	auraName.TextColor3   = Color3.new(1, 1, 1)
 	auraRarity.TextColor3 = Color3.new(1, 1, 1)
 
@@ -120,6 +180,15 @@ local function updateSelectedAuraPanel(frame: Frame)
 	local rarityStroke = auraRarity:FindFirstChildWhichIsA("UIStroke")
 	if nameStroke   then nameStroke.Color   = stroke end
 	if rarityStroke then rarityStroke.Color = stroke end
+
+	-- Render the 3D model in the SelectedAura viewport
+	if selectedViewport then
+		local brainrotName = frame:GetAttribute("BrainrotName")
+		local brainrot = BrainrotConfig.getBrainrotByName(brainrotName)
+		if brainrot then
+			loadModelIntoViewport(selectedViewport, brainrot.ModelName)
+		end
+	end
 
 	updateEquipButton()
 end
@@ -190,14 +259,15 @@ function InventoryController.addItem(brainrot, slotId)
 		:WaitForChild("InventoryArea")
 		:WaitForChild("ItemsScroll")
 
+	-- Outer card frame
 	local frame = Instance.new("Frame")
 	frame.Name              = brainrot.Name
-	frame.BackgroundColor3  = Color3.fromRGB(28, 28, 33)
+	frame.BackgroundColor3  = NORMAL_COLOR
 	frame.BorderSizePixel   = 0
 	frame.ClipsDescendants  = true
 
 	local frameCorner = Instance.new("UICorner")
-	frameCorner.CornerRadius = UDim.new(0, 8)
+	frameCorner.CornerRadius = UDim.new(0, 10)
 	frameCorner.Parent = frame
 
 	-- Store raw name (with underscores) as attribute — used for model lookup
@@ -210,45 +280,56 @@ function InventoryController.addItem(brainrot, slotId)
 		frame:SetAttribute("SlotId", slotId)
 	end
 
-	-- Image area background (visible as a placeholder when no image is set)
+	-- Thin rarity color bar on the left edge (full card height)
+	local rarityBar = Instance.new("Frame")
+	rarityBar.Name             = "RarityBar"
+	rarityBar.Size             = UDim2.new(0, 4, 1, 0)
+	rarityBar.Position         = UDim2.new(0, 0, 0, 0)
+	rarityBar.BackgroundColor3 = brainrot.Color
+	rarityBar.BorderSizePixel  = 0
+	rarityBar.ZIndex           = 4
+	rarityBar.Parent           = frame
+
+	-- Image area background (darker to make 3D models pop)
 	local imageArea = Instance.new("Frame")
 	imageArea.Name             = "ImageArea"
-	imageArea.Size             = UDim2.new(1, 0, 0.66, 0)
+	imageArea.Size             = UDim2.new(1, 0, 0.76, 0)
 	imageArea.Position         = UDim2.new(0, 0, 0, 0)
-	imageArea.BackgroundColor3 = Color3.fromRGB(48, 48, 56)
+	imageArea.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
 	imageArea.BorderSizePixel  = 0
 	imageArea.ZIndex           = 1
 	imageArea.Parent           = frame
 
-	-- Actual image displayed inside the image area
-	local imageLabel = Instance.new("ImageLabel")
-	imageLabel.Name                   = "ItemImage"
-	imageLabel.Size                   = UDim2.new(1, 0, 1, 0)
-	imageLabel.BackgroundTransparency = 1
-	imageLabel.Image                  = brainrot.ImageId
-	imageLabel.ScaleType              = Enum.ScaleType.Fit
-	imageLabel.ZIndex                 = 2
-	imageLabel.Parent                 = imageArea
+	-- ViewportFrame displays the 3D brainrot model
+	local viewportFrame = Instance.new("ViewportFrame")
+	viewportFrame.Name                   = "ItemViewport"
+	viewportFrame.Size                   = UDim2.new(1, 0, 1, 0)
+	viewportFrame.BackgroundTransparency = 1
+	viewportFrame.ZIndex                 = 2
+	viewportFrame.Parent                 = imageArea
 
-	-- Thin rarity color accent line separating image from name
+	-- Load the 3D model asynchronously
+	loadModelIntoViewport(viewportFrame, brainrot.ModelName)
+
+	-- Thin rarity color accent line between image and name
 	local accentLine = Instance.new("Frame")
 	accentLine.Name             = "AccentLine"
-	accentLine.Size             = UDim2.new(1, 0, 0.04, 0)
-	accentLine.Position         = UDim2.new(0, 0, 0.66, 0)
+	accentLine.Size             = UDim2.new(1, 0, 0.03, 0)
+	accentLine.Position         = UDim2.new(0, 0, 0.76, 0)
 	accentLine.BackgroundColor3 = brainrot.Color
 	accentLine.BorderSizePixel  = 0
 	accentLine.ZIndex           = 2
 	accentLine.Parent           = frame
 
-	-- Name label at the bottom
+	-- Name label at the bottom (white text — rarity shown by left bar + stroke)
 	local nameLabel = Instance.new("TextLabel")
 	nameLabel.Name                   = "ItemName"
-	nameLabel.Size                   = UDim2.new(1, -8, 0.30, 0)
-	nameLabel.Position               = UDim2.new(0, 4, 0.70, 0)
+	nameLabel.Size                   = UDim2.new(1, -12, 0.21, 0)
+	nameLabel.Position               = UDim2.new(0, 8, 0.79, 0)
 	nameLabel.BackgroundTransparency = 1
 	nameLabel.BorderSizePixel        = 0
 	nameLabel.Text                   = displayName(brainrot.Name)
-	nameLabel.TextColor3             = brainrot.Color
+	nameLabel.TextColor3             = Color3.new(1, 1, 1)
 	nameLabel.TextScaled             = true
 	nameLabel.Font                   = Enum.Font.GothamBold
 	nameLabel.ZIndex                 = 2
@@ -300,10 +381,21 @@ function InventoryController.init()
 	task.spawn(function()
 		local selectedAura = inventoryFrame:WaitForChild("SelectedAura")
 		local auraFrame    = selectedAura:WaitForChild("Frame")
-		auraPic    = auraFrame:WaitForChild("BrainrotPic")
-		auraName   = auraFrame:WaitForChild("SelectedName")
-		auraRarity = auraFrame:WaitForChild("SelectedRarity")
+		auraPic     = auraFrame:WaitForChild("BrainrotPic")
+		auraName    = auraFrame:WaitForChild("SelectedName")
+		auraRarity  = auraFrame:WaitForChild("SelectedRarity")
 		auraRewards = auraFrame:WaitForChild("SelectedRewards")
+
+		-- Create a persistent ViewportFrame inside BrainrotPic for 3D preview
+		-- BrainrotPic acts as the container; Image is always blank
+		auraPic.Image                  = ""
+		auraPic.BackgroundTransparency = 1
+
+		selectedViewport = Instance.new("ViewportFrame")
+		selectedViewport.Name                   = "SelectedViewport"
+		selectedViewport.Size                   = UDim2.new(1, 0, 1, 0)
+		selectedViewport.BackgroundTransparency = 1
+		selectedViewport.Parent                 = auraPic
 	end)
 
 	-- Wire up EquipButton independently so it never blocks DeleteButton

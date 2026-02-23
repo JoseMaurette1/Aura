@@ -11,18 +11,37 @@ local playerGui = player:WaitForChild("PlayerGui")
 local CodesController = {}
 
 function CodesController.init()
-	local screenGui     = playerGui:WaitForChild("ScreenGui")
-	local codesGUI      = screenGui:WaitForChild("CodesGUI")
-	local codeSection   = codesGUI:WaitForChild("CodeSection")
-	local codeBox       = codeSection:WaitForChild("CodeBox")
-	local redeemButton  = codesGUI:WaitForChild("RedeemButton")
-	local feedbackLabel = codesGUI:WaitForChild("FeedbackLabel")
-	local exitButton    = codesGUI:WaitForChild("ExitButton")
+	local screenGui    = playerGui:WaitForChild("ScreenGui")
+	local codesGUI     = screenGui:WaitForChild("CodesGUI")
+	local bgImageLabel = codesGUI:WaitForChild("ImageLabel")
+	local codeSection  = codesGUI:WaitForChild("CodeSection")
+	local codeBox      = codeSection:WaitForChild("CodeBox")
+	local redeemButton = bgImageLabel:WaitForChild("RedeemButton")
+	local exitButton   = codesGUI:WaitForChild("ExitButton")
+	local codesButton  = screenGui:WaitForChild("CodesButton")
+
+	-- FeedbackLabel is optional — only used if it exists in the GUI
+	local feedbackLabel = codesGUI:FindFirstChild("FeedbackLabel", true)
 
 	codesGUI.Visible = false
 
 	ButtonEffects.apply(redeemButton)
 	ButtonEffects.applySubtle(exitButton)
+	ButtonEffects.applySubtle(codesButton)
+
+	-- CodesButton opens the codes GUI
+	codesButton.MouseButton1Click:Connect(function()
+		if feedbackLabel then feedbackLabel.Text = "" end
+		codeBox.Text = ""
+		UIManager.open(codesGUI)
+	end)
+
+	-- ExitButton closes the codes GUI
+	exitButton.MouseButton1Click:Connect(function()
+		if feedbackLabel then feedbackLabel.Text = "" end
+		codeBox.Text = ""
+		UIManager.close(codesGUI)
+	end)
 
 	-- ProximityPrompt wired up independently — doesn't depend on remotes being ready
 	task.spawn(function()
@@ -30,8 +49,8 @@ function CodesController.init()
 		local prompt = npc:FindFirstChildWhichIsA("ProximityPrompt", true)
 		if prompt then
 			prompt.Triggered:Connect(function()
-				feedbackLabel.Text = ""
-				codeBox.Text       = ""
+				if feedbackLabel then feedbackLabel.Text = "" end
+				codeBox.Text = ""
 				UIManager.open(codesGUI)
 			end)
 		else
@@ -39,14 +58,8 @@ function CodesController.init()
 		end
 	end)
 
-	exitButton.MouseButton1Click:Connect(function()
-		feedbackLabel.Text = ""
-		codeBox.Text       = ""
-		UIManager.close(codesGUI)
-	end)
-
-	-- Redeem button and server response wired in their own spawn so WaitForChild
-	-- on the remote never blocks the ProximityPrompt connection above
+	-- Redeem button wired in its own spawn so WaitForChild on the remote
+	-- never blocks the button connections above
 	task.spawn(function()
 		local RemoteEvents = ReplicatedStorage:WaitForChild("RemoteEvents")
 		local redeemRemote = RemoteEvents:WaitForChild("RedeemCodeRemote")
@@ -55,19 +68,23 @@ function CodesController.init()
 			local code = codeBox.Text:upper():gsub("%s+", "")
 			if code == "" then return end
 
-			redeemButton.Active      = false
-			feedbackLabel.Text       = "Redeeming..."
-			feedbackLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+			redeemButton.Active = false
+			if feedbackLabel then
+				feedbackLabel.Text       = "Redeeming..."
+				feedbackLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+			end
 
 			redeemRemote:FireServer(code)
 		end)
 
 		redeemRemote.OnClientEvent:Connect(function(result)
-			redeemButton.Active      = true
-			feedbackLabel.Text       = result.message
-			feedbackLabel.TextColor3 = result.success
-				and Color3.fromRGB(80, 220, 80)
-				or  Color3.fromRGB(220, 80, 80)
+			redeemButton.Active = true
+			if feedbackLabel then
+				feedbackLabel.Text       = result.message
+				feedbackLabel.TextColor3 = result.success
+					and Color3.fromRGB(80, 220, 80)
+					or  Color3.fromRGB(220, 80, 80)
+			end
 
 			if result.success then
 				codeBox.Text = ""
