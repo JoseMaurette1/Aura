@@ -83,14 +83,30 @@ local function getTargetCFrame(hrp: BasePart, slotIndex: number, footOffset: num
 	return CFrame.lookAt(targetPos, targetPos + flatLook)
 end
 
--- Map a brainrot's Rarity number to its tier name prefix
-local function getTierPrefix(rarity: number): string
-	if rarity >= 10000 then return "Mythic"
-	elseif rarity >= 2500 then return "Legendary"
-	elseif rarity >= 500  then return "Rare"
-	elseif rarity >= 75   then return "Uncommon"
-	else                       return "Common"
+-- Map a brainrot's Rarity number to its rarity folder name
+local function getRarityFolder(rarity: number): string
+	if rarity <= 25   then return "Common"
+	elseif rarity <= 100  then return "Uncommon"
+	elseif rarity <= 1000 then return "Rare"
+	elseif rarity <= 5000 then return "Legendary"
+	else                       return "Mythic"
 	end
+end
+
+-- Helper to find a model by name, trying both underscore and space versions
+local function findModelInFolder(folder, modelName)
+	-- Try exact name first
+	local model = folder:FindFirstChild(modelName, true)
+	if model then return model end
+
+	-- Try with underscores replaced by spaces
+	local altName = modelName:gsub("_", " ")
+	if altName ~= modelName then
+		model = folder:FindFirstChild(altName, true)
+		if model then return model end
+	end
+
+	return nil
 end
 
 -- Scan ServerStorage/BrainrotAura for all children whose name starts with the tier prefix,
@@ -107,7 +123,7 @@ local function pickRandomAuraName(brainrotData): string?
 		return nil
 	end
 
-	local prefix  = getTierPrefix(brainrotData.Rarity)
+	local prefix  = getRarityFolder(brainrotData.Rarity)
 	local matches = {}
 	for _, child in ipairs(auraFolder:GetChildren()) do
 		if child.Name:sub(1, #prefix) == prefix then
@@ -169,16 +185,23 @@ local function spawnPet(player: Player, brainrotName: string, slotIndex: number?
 		return
 	end
 
-	-- Find the pet model template in ServerStorage
+	-- Find the pet model template in ServerStorage/Brainrots/<RarityFolder>/
 	local brainrotsFolder = ServerStorage:FindFirstChild("Brainrots")
 	if not brainrotsFolder then
 		warn("[PetController] ServerStorage/Brainrots folder not found")
 		return
 	end
 
-	local modelTemplate = brainrotsFolder:FindFirstChild(brainrotData.ModelName)
+	local rarityFolder = brainrotsFolder:FindFirstChild(getRarityFolder(brainrotData.Rarity))
+	local modelTemplate = rarityFolder and findModelInFolder(rarityFolder, brainrotData.ModelName)
+
+	-- Fallback: search all subfolders in case model is in a different rarity folder
 	if not modelTemplate then
-		warn("[PetController] Model not found for: " .. brainrotData.ModelName)
+		modelTemplate = findModelInFolder(brainrotsFolder, brainrotData.ModelName)
+	end
+
+	if not modelTemplate then
+		warn("[PetController] Model not found anywhere in Brainrots/ for: " .. brainrotData.ModelName)
 		return
 	end
 
@@ -271,12 +294,12 @@ local function spawnPet(player: Player, brainrotName: string, slotIndex: number?
 	if head then
 		-- Tier name with stars for Rare and above
 		local tierName
-		local r = brainrotData.Rarity
-		if r > 5000 then      tierName = "✦ MYTHIC ✦"
-		elseif r > 1000 then  tierName = "✦ LEGENDARY ✦"
-		elseif r > 100 then   tierName = "✦ RARE ✦"
-		elseif r > 25 then    tierName = "UNCOMMON"
-		else                  tierName = "COMMON"
+		local folder = getRarityFolder(brainrotData.Rarity)
+		if folder == "Mythic"        then tierName = "MYTHIC"
+		elseif folder == "Legendary" then tierName = "LEGENDARY"
+		elseif folder == "Rare"      then tierName = "RARE"
+		elseif folder == "Uncommon"  then tierName = "UNCOMMON"
+		else                              tierName = "COMMON"
 		end
 
 		billboard             = Instance.new("BillboardGui")

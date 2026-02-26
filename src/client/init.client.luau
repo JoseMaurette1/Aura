@@ -1,5 +1,11 @@
 print("Hello world, from client!")
 
+-- Auto-register all brainrots from ReplicatedStorage folder structure FIRST
+-- so all controllers have the full brainrot list
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local BrainrotConfig    = require(ReplicatedStorage.Shared.BrainrotConfig)
+BrainrotConfig.autoRegisterFromFolders(ReplicatedStorage:WaitForChild("Brainrots"))
+
 -- Initialize Spin UI
 local SpinUI = require(script.SpinUI)
 SpinUI.init()

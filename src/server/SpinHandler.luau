@@ -31,6 +31,19 @@ SpinRemote.OnServerEvent:Connect(function(player: Player)
 	local isPityDrop = false
 	local luck = BrainrotConfig.getLuck(DataManager.getRebirthCount(player))
 
+	-- ── Gamepass luck multipliers ─────────────────────────────────────────────
+	-- Increment the player's lifetime spin counter (used for 2x Luck every-10th-pull)
+	local spinCount = DataManager.incrementSpinCount(player)
+
+	-- VIP: permanent 2x luck on every single pull (supersedes 2x Luck pass)
+	if player:GetAttribute("OwnsVIP") then
+		luck = luck * 2
+	-- 2x Luck: 2x luck on every 10th pull (pulls 10, 20, 30 ...)
+	elseif player:GetAttribute("Owns2xLuck") and spinCount % 10 == 0 then
+		luck = luck * 2
+		print("[Server] " .. player.Name .. " 2x Luck triggered on spin #" .. spinCount)
+	end
+
 	-- Check pity triggers highest-tier first so mythic pity beats legendary pity etc.
 	if PITY_CFG.Enabled and pityMythic >= PITY_CFG.Mythic.Threshold then
 		brainrot    = BrainrotConfig.getGuaranteedMythicBrainrot()
@@ -106,12 +119,12 @@ SpinRemote.OnServerEvent:Connect(function(player: Player)
 		end
 	end
 
-	-- Persist item and award money
+	-- Persist item and award rolls
 	local slotId          = DataManager.addItem(player, brainrot.Name)
 	local equippedName    = DataManager.getEquippedBrainrot(player)
 	local equippedBrainrot = equippedName and BrainrotConfig.getBrainrotByName(equippedName) or nil
-	local moneyReward     = BrainrotConfig.getMoneyForBrainrot(equippedBrainrot)
-	DataManager.addMoney(player, moneyReward)
+	local rollsReward     = BrainrotConfig.getRollsForBrainrot(equippedBrainrot)
+	DataManager.addRolls(player, rollsReward)
 
 	print("[Server] " .. player.Name .. " rolled " .. brainrot.Name
 		.. " (1/" .. brainrot.Rarity .. ")"

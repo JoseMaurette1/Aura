@@ -2,12 +2,12 @@
 local DataManager = require(script.Parent.DataManager)
 
 -- Add/remove codes here as you release them.
--- Each code gives a money reward when redeemed once per player.
+-- Each code gives a rolls reward when redeemed once per player.
 local CODES = {
-	["WELCOME"]   = { money = 500  },
-	["TUNG100"]   = { money = 100  },
-	["BRAINROT"]  = { money = 1000 },
-	["LAUNCH"]    = { money = 2500 },
+	["WELCOME"]   = { rolls = 500  },
+	["TUNG100"]   = { rolls = 100  },
+	["BRAINROT"]  = { rolls = 1000 },
+	["LAUNCH"]    = { rolls = 2500 },
 }
 
 local CodesHandler = {}
@@ -37,13 +37,14 @@ function CodesHandler.init(remoteEventsFolder)
 		-- Mark redeemed and give reward
 		DataManager.markCodeRedeemed(player, upper)
 
-		if codeData.money then
-			DataManager.addMoney(player, codeData.money)
+		if codeData.rolls then
+			DataManager.addRolls(player, codeData.rolls)
 		end
 
 		redeemRemote:FireClient(player, {
 			success = true,
-			message = "Code redeemed! +" .. (codeData.money or 0) .. " money",
+			message = "Code redeemed! +" .. (codeData.rolls or 0) .. " rolls",
+			rolls   = codeData.rolls or 0,
 		})
 
 		print("[CodesHandler] " .. player.Name .. " redeemed: " .. upper)

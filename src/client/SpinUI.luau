@@ -34,11 +34,11 @@ local function getRarityTier(rarity: number): string
 end
 
 local RARITY_EFFECTS = {
-	Common    = { flashColor = nil,                            punchBonus = 0,  confetti = false },
-	Uncommon  = { flashColor = Color3.fromRGB(120, 255, 120), punchBonus = 8,  confetti = false },
-	Rare      = { flashColor = Color3.fromRGB(180, 80, 255),  punchBonus = 20, confetti = false },
-	Legendary = { flashColor = Color3.fromRGB(255, 200, 50),  punchBonus = 36, confetti = true  },
-	Mythic    = { flashColor = Color3.fromRGB(255, 50, 50),   punchBonus = 52, confetti = true  },
+	Common    = { flashColor = nil,                           punchBonus = 0,  confetti = false },
+	Uncommon  = { flashColor = nil,                           punchBonus = 8,  confetti = false },
+	Rare      = { flashColor = nil,                           punchBonus = 20, confetti = false },
+	Legendary = { flashColor = Color3.fromRGB(255, 200, 50), punchBonus = 36, confetti = true  },
+	Mythic    = { flashColor = Color3.fromRGB(255, 50, 50),  punchBonus = 52, confetti = true  },
 }
 
 local function flashScreen(rarityFlash, color, intensity)
@@ -144,23 +144,68 @@ function SpinUI.init()
 	ButtonEffects.applyPrimary(rollButton)
 	rollButton.MouseButton1Click:Connect(SpinUI.triggerSpin)
 
+	-- Shared landing sequence (result snap → effects → punch → shake → cleanup)
+	local function landResult(result, slotId)
+		brainrotName.Text   = displayName(result.Name)
+		brainrotRarity.Text = "1 in " .. result.Rarity
+		nameStroke.Color    = result.Color
+		rarityStroke.Color  = result.Color
+
+		local tier         = getRarityTier(result.Rarity)
+		local effects      = RARITY_EFFECTS[tier]
+		local willAutoDelete = SettingsController.shouldAutoDelete(result)
+
+		-- Suppress flash and confetti when the item is auto-deleted — quieter feedback
+		if not willAutoDelete then
+			if effects.flashColor then
+				local intensity = tier == "Mythic" and 0.15 or 0.3
+				flashScreen(rarityFlash, effects.flashColor, intensity)
+			end
+			if effects.confetti then
+				spawnConfetti(screenGui, result.Color)
+			end
+		end
+
+		local punchAmount = 14 + effects.punchBonus
+		brainrotName.TextSize = landedSize + punchAmount
+		TweenService:Create(brainrotName, TweenInfo.new(0.12, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			TextSize = landedSize
+		}):Play()
+		task.wait(0.12)
+
+		shakeFrame(spinningFrame)
+		if slotId then
+			if willAutoDelete then
+				DeleteItemRemote:FireServer(slotId)
+			else
+				InventoryController.addItem(result, slotId)
+			end
+		end
+		spinningFrame.Visible = false
+		rollButton.Active     = true
+		SpinUI.IsSpinning     = false
+	end
+
 	SpinRemote.OnClientEvent:Connect(function(data)
 		local result = data.Result
 		local slotId = data.SlotId
 		if data.Pity then updatePityBars(data.Pity) end
 
 		task.spawn(function()
-			local totalDuration = 5
-			local startTime = tick()
-			local lastUpdate = startTime
+			-- ── Skip Animation gamepass: jump straight to result ───────────────
+			if player:GetAttribute("OwnsSkipAnimation") then
+				landResult(result, slotId)
+				return
+			end
 
-			-- Cycle through random brainrots until time is up
+			-- ── Normal 5-second cycling animation ─────────────────────────────
+			local totalDuration = 5
+			local startTime     = tick()
+			local lastUpdate    = startTime
+
 			while true do
 				local elapsed = tick() - startTime
-
-				if elapsed >= totalDuration then
-					break
-				end
+				if elapsed >= totalDuration then break end
 
 				local progress = elapsed / totalDuration
 				local speed
@@ -176,55 +221,17 @@ function SpinUI.init()
 
 				if tick() - lastUpdate >= speed then
 					local b = BrainrotConfig.Brainrots[math.random(1, #BrainrotConfig.Brainrots)]
-					brainrotName.Text = displayName(b.Name)
+					brainrotName.Text   = displayName(b.Name)
 					brainrotRarity.Text = "1 in " .. b.Rarity
-					nameStroke.Color = b.Color
-					rarityStroke.Color = b.Color
+					nameStroke.Color    = b.Color
+					rarityStroke.Color  = b.Color
 					lastUpdate = tick()
 				end
 
 				task.wait()
 			end
 
-			-- Snap to final result
-			brainrotName.Text = displayName(result.Name)
-			brainrotRarity.Text = "1 in " .. result.Rarity
-			nameStroke.Color = result.Color
-			rarityStroke.Color = result.Color
-
-			-- Rarity-scaled effects
-			local tier    = getRarityTier(result.Rarity)
-			local effects = RARITY_EFFECTS[tier]
-
-			if effects.flashColor then
-				local intensity = tier == "Mythic" and 0.15 or 0.3
-				flashScreen(rarityFlash, effects.flashColor, intensity)
-			end
-			if effects.confetti then
-				spawnConfetti(screenGui, result.Color)
-			end
-
-			-- Land punch — bigger for rarer drops
-			local punchAmount = 14 + effects.punchBonus
-			brainrotName.TextSize = landedSize + punchAmount
-			TweenService:Create(brainrotName, TweenInfo.new(0.12, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-				TextSize = landedSize
-			}):Play()
-			task.wait(0.12)
-
-			-- Shake then instantly hide
-			shakeFrame(spinningFrame)
-			if slotId then
-				if SettingsController.shouldAutoDelete(result) then
-					-- Auto-delete: remove from server data and skip inventory
-					DeleteItemRemote:FireServer(slotId)
-				else
-					InventoryController.addItem(result, slotId)
-				end
-			end
-			spinningFrame.Visible = false
-			rollButton.Active = true
-			SpinUI.IsSpinning = false
+			landResult(result, slotId)
 		end)
 	end)
 

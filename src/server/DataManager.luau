@@ -1,5 +1,5 @@
 -- Persistent data management using DataStoreService
--- Owns save/load/delete for all player data (inventory, money, pity counter)
+-- Owns save/load/delete for all player data (inventory, rolls, pity counter)
 local DataStoreService = game:GetService("DataStoreService")
 local Players          = game:GetService("Players")
 
@@ -7,20 +7,23 @@ local STORE_NAME = "PlayerData_v1"
 local dataStore  = DataStoreService:GetDataStore(STORE_NAME)
 
 -- In-memory cache per player
--- [userId] = { inventory, nextSlotId, money, pityCount, pityLegendary, pityMythic, rebirthCount, equippedBrainrot }
+-- [userId] = { inventory, nextSlotId, rolls, pityCount, pityLegendary, pityMythic, rebirthCount, equippedBrainrot }
 local cache = {}
 
 local function defaultData()
 	return {
-		inventory        = {},
-		nextSlotId       = 1,
-		money            = 0,
-		pityCount        = 0,   -- spins since last uncommon+ (uncommon pity)
-		pityLegendary    = 0,   -- spins since last legendary+
-		pityMythic       = 0,   -- spins since last mythic
-		rebirthCount     = 0,
-		equippedBrainrot = nil,
-		redeemedCodes    = {},  -- set: { ["CODENAME"] = true }
+		inventory               = {},
+		nextSlotId              = 1,
+		rolls                   = 0,
+		pityCount               = 0,     -- spins since last uncommon+ (uncommon pity)
+		pityLegendary           = 0,     -- spins since last legendary+
+		pityMythic              = 0,     -- spins since last mythic
+		rebirthCount            = 0,
+		equippedBrainrot        = nil,
+		redeemedCodes           = {},    -- set: { ["CODENAME"] = true }
+		spinCount               = 0,     -- total lifetime spins (used for 2x Luck every-10th-pull)
+		hasRedeemedStarterPack  = false, -- true once Starter Pack items have been granted
+		hasRedeemedOpPack       = false, -- true once OP Pack items have been granted
 	}
 end
 
@@ -44,24 +47,30 @@ local function serializeData(data)
 	end
 
 	return {
-		inventory      = invArray,
-		money          = data.money,
-		pityCount      = data.pityCount,
-		pityLegendary  = data.pityLegendary,
-		pityMythic     = data.pityMythic,
-		rebirthCount   = data.rebirthCount,
-		redeemedCodes  = redeemedArray,
+		inventory               = invArray,
+		rolls                   = data.rolls,
+		pityCount               = data.pityCount,
+		pityLegendary           = data.pityLegendary,
+		pityMythic              = data.pityMythic,
+		rebirthCount            = data.rebirthCount,
+		redeemedCodes           = redeemedArray,
+		spinCount               = data.spinCount,
+		hasRedeemedStarterPack  = data.hasRedeemedStarterPack,
+		hasRedeemedOpPack       = data.hasRedeemedOpPack,
 	}
 end
 
 -- Rebuild in-memory struct from raw DataStore table
 local function deserializeData(raw)
 	local data = defaultData()
-	data.money          = raw.money          or 0
-	data.pityCount      = raw.pityCount      or 0
-	data.pityLegendary  = raw.pityLegendary  or 0
-	data.pityMythic     = raw.pityMythic     or 0
-	data.rebirthCount   = raw.rebirthCount   or 0
+	data.rolls                  = raw.rolls                  or 0
+	data.pityCount              = raw.pityCount              or 0
+	data.pityLegendary          = raw.pityLegendary          or 0
+	data.pityMythic             = raw.pityMythic             or 0
+	data.rebirthCount           = raw.rebirthCount           or 0
+	data.spinCount              = raw.spinCount              or 0
+	data.hasRedeemedStarterPack = raw.hasRedeemedStarterPack or false
+	data.hasRedeemedOpPack      = raw.hasRedeemedOpPack      or false
 
 	-- Deserialize redeemedCodes array → set for O(1) lookup
 	if raw.redeemedCodes then
@@ -80,11 +89,11 @@ local function deserializeData(raw)
 	return data
 end
 
-local function updateLeaderstats(player, money)
+local function updateLeaderstats(player, rolls)
 	local ls = player:FindFirstChild("leaderstats")
 	if ls then
-		local mv = ls:FindFirstChild("Money")
-		if mv then mv.Value = money end
+		local mv = ls:FindFirstChild("Rolls")
+		if mv then mv.Value = rolls end
 	end
 end
 
@@ -130,15 +139,15 @@ function DataManager.init(remoteEventsFolder)
 	Players.PlayerAdded:Connect(function(player)
 		local userId = tostring(player.UserId)
 
-		-- Create leaderstats immediately with 0 money; updated after load
+		-- Create leaderstats immediately with 0 rolls; updated after load
 		local leaderstats = Instance.new("Folder")
 		leaderstats.Name   = "leaderstats"
 		leaderstats.Parent = player
 
-		local moneyValue = Instance.new("IntValue")
-		moneyValue.Name   = "Money"
-		moneyValue.Value  = 0
-		moneyValue.Parent = leaderstats
+		local rollsValue = Instance.new("IntValue")
+		rollsValue.Name   = "Rolls"
+		rollsValue.Value  = 0
+		rollsValue.Parent = leaderstats
 
 		local rebirthsValue = Instance.new("IntValue")
 		rebirthsValue.Name   = "Rebirths"
@@ -161,7 +170,7 @@ function DataManager.init(remoteEventsFolder)
 		end
 
 		cache[userId] = data
-		moneyValue.Value    = data.money
+		rollsValue.Value    = data.rolls
 		rebirthsValue.Value = data.rebirthCount
 
 		-- Send saved inventory to client as {slotId, name} pairs
@@ -237,17 +246,17 @@ function DataManager.getEquippedBrainrot(player)
 	return data and data.equippedBrainrot or nil
 end
 
-function DataManager.addMoney(player, amount)
+function DataManager.addRolls(player, amount)
 	local data = cache[tostring(player.UserId)]
 	if not data then return 0 end
-	data.money = data.money + amount
-	updateLeaderstats(player, data.money)
-	return data.money
+	data.rolls = data.rolls + amount
+	updateLeaderstats(player, data.rolls)
+	return data.rolls
 end
 
-function DataManager.getMoney(player)
+function DataManager.getRolls(player)
 	local data = cache[tostring(player.UserId)]
-	return data and data.money or 0
+	return data and data.rolls or 0
 end
 
 function DataManager.getPityCount(player)
@@ -302,11 +311,54 @@ function DataManager.markCodeRedeemed(player, code: string)
 	if data then data.redeemedCodes[code] = true end
 end
 
-function DataManager.resetMoney(player)
+function DataManager.resetRolls(player)
 	local data = cache[tostring(player.UserId)]
 	if not data then return end
-	data.money = 0
+	data.rolls = 0
 	updateLeaderstats(player, 0)
+end
+
+-- ── Spin counter (for 2x Luck every-10th-pull gamepass) ────────────────────
+function DataManager.incrementSpinCount(player)
+	local data = cache[tostring(player.UserId)]
+	if not data then return 0 end
+	data.spinCount = data.spinCount + 1
+	return data.spinCount
+end
+
+function DataManager.getSpinCount(player)
+	local data = cache[tostring(player.UserId)]
+	return data and data.spinCount or 0
+end
+
+-- ── Pack redemption guards ──────────────────────────────────────────────────
+function DataManager.hasRedeemedStarterPack(player)
+	local data = cache[tostring(player.UserId)]
+	return data and data.hasRedeemedStarterPack or false
+end
+
+function DataManager.markStarterPackRedeemed(player)
+	local data = cache[tostring(player.UserId)]
+	if data then data.hasRedeemedStarterPack = true end
+end
+
+function DataManager.hasRedeemedOpPack(player)
+	local data = cache[tostring(player.UserId)]
+	return data and data.hasRedeemedOpPack or false
+end
+
+function DataManager.markOpPackRedeemed(player)
+	local data = cache[tostring(player.UserId)]
+	if data then data.hasRedeemedOpPack = true end
+end
+
+-- ── Waits until this player's data is loaded into cache ────────────────────
+-- Call this from other modules' PlayerAdded handlers to avoid race conditions
+function DataManager.waitForPlayer(player)
+	local userId = tostring(player.UserId)
+	while not cache[userId] do
+		task.wait(0.05)
+	end
 end
 
 return DataManager

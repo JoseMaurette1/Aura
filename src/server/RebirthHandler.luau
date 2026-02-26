@@ -12,12 +12,12 @@ function RebirthHandler.init(remoteEventsFolder)
 	rebirthRemote.Parent = remoteEventsFolder
 
 	rebirthRemote.OnServerEvent:Connect(function(player)
-		local money = DataManager.getMoney(player)
+		local rolls = DataManager.getRolls(player)
 		local currentRebirthCount = DataManager.getRebirthCount(player)
 		local cost = BrainrotConfig.getRebirthCost(currentRebirthCount)
-		if money < cost then return end
+		if rolls < cost then return end
 
-		DataManager.resetMoney(player)
+		DataManager.resetRolls(player)
 		local newCount = currentRebirthCount + 1
 		DataManager.setRebirthCount(player, newCount)
 

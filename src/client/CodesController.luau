@@ -21,7 +21,11 @@ function CodesController.init()
 	local codesButton  = screenGui:WaitForChild("CodesButton")
 
 	-- FeedbackLabel is optional — only used if it exists in the GUI
-	local feedbackLabel = codesGUI:FindFirstChild("FeedbackLabel", true)
+	local feedbackLabel  = codesGUI:FindFirstChild("FeedbackLabel", true)
+	local codeConfirm    = codesGUI:FindFirstChild("CodeConfirm")
+	local confirmLabel   = codeConfirm and codeConfirm:FindFirstChild("TextLabel")
+
+	if codeConfirm then codeConfirm.Visible = false end
 
 	codesGUI.Visible = false
 
@@ -86,8 +90,19 @@ function CodesController.init()
 					or  Color3.fromRGB(220, 80, 80)
 			end
 
-			if result.success then
-				codeBox.Text = ""
+			if codeConfirm and confirmLabel then
+				if result.success then
+					codeBox.Text         = ""
+					confirmLabel.Text    = "Congratulations +" .. result.rolls .. " Rolls!!"
+				elseif result.message == "Already redeemed!" then
+					confirmLabel.Text    = "Code already redeemed!"
+				else
+					confirmLabel.Text    = "Code does not exist!"
+				end
+				codeConfirm.Visible = true
+				task.delay(2.5, function()
+					codeConfirm.Visible = false
+				end)
 			end
 		end)
 	end)

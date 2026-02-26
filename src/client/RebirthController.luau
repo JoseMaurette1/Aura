@@ -46,7 +46,7 @@ function RebirthController.init()
 
 		-- Leaderstats references
 		local leaderstats  = player:WaitForChild("leaderstats")
-		local moneyValue   = leaderstats:WaitForChild("Money")
+		local rollsValue   = leaderstats:WaitForChild("Rolls")
 		local rebirthsValue = leaderstats:WaitForChild("Rebirths")
 
 		-- RebirthRemote
@@ -55,33 +55,54 @@ function RebirthController.init()
 
 		local function updateUI()
 			local rebirthCount = rebirthsValue.Value
-			local money        = moneyValue.Value
+			local rolls        = rollsValue.Value
 			local cost         = BrainrotConfig.getRebirthCost(rebirthCount)
 
 			beforeLuck.Text      = BrainrotConfig.getLuck(rebirthCount) .. "x"
 			afterLuck.Text       = BrainrotConfig.getNextLuck(rebirthCount) .. "x"
-			rebirthProgress.Text = money .. " / " .. cost
+			rebirthProgress.Text = rolls .. " / " .. cost
 
-			prestigeButton.Active = money >= cost
-			prestigeButton.AutoButtonColor = money >= cost
-			prestigeButton.ImageTransparency = money >= cost and 0 or 0.5
+			prestigeButton.Active = rolls >= cost
+			prestigeButton.AutoButtonColor = rolls >= cost
+			prestigeButton.ImageTransparency = rolls >= cost and 0 or 0.5
 		end
 
 		-- Initial update
 		updateUI()
 
-		-- React to money changes
-		moneyValue.Changed:Connect(updateUI)
+		-- ── Auto Rebirth (gamepass) ──────────────────────────────────────────
+		-- Fires the rebirth remote automatically when rolls hit the cost.
+		-- A pending flag prevents double-firing while waiting for server response.
+		local autoRebirthPending = false
 
-		-- React to rebirth count changes (after server confirms)
-		rebirthsValue.Changed:Connect(updateUI)
+		local function tryAutoRebirth()
+			if not player:GetAttribute("OwnsAutoRebirth") then return end
+			if autoRebirthPending then return end
+			local cost = BrainrotConfig.getRebirthCost(rebirthsValue.Value)
+			if rollsValue.Value >= cost then
+				autoRebirthPending = true
+				rebirthRemote:FireServer()
+			end
+		end
+
+		-- React to rolls changes — update UI and check auto rebirth
+		rollsValue.Changed:Connect(function()
+			updateUI()
+			tryAutoRebirth()
+		end)
+
+		-- React to rebirth count changes — clear pending flag so next threshold works
+		rebirthsValue.Changed:Connect(function()
+			updateUI()
+			autoRebirthPending = false
+		end)
 
 		ButtonEffects.applyPrimary(prestigeButton)
 
 		-- Prestige button click — fire server
 		prestigeButton.MouseButton1Click:Connect(function()
 			local cost = BrainrotConfig.getRebirthCost(rebirthsValue.Value)
-			if moneyValue.Value >= cost then
+			if rollsValue.Value >= cost then
 				rebirthRemote:FireServer()
 			end
 		end)

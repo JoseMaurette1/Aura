@@ -4,6 +4,7 @@ local TweenService      = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local BrainrotConfig = require(ReplicatedStorage.Shared.BrainrotConfig)
+local ViewportUtil   = require(ReplicatedStorage.Shared.ViewportUtil)
 local UIManager      = require(script.Parent.UIManager)
 local ButtonEffects  = require(script.Parent.ButtonEffects)
 
@@ -34,6 +35,59 @@ local auraRewards    = nil
 local equipButton    = nil
 local selectedViewport = nil  -- ViewportFrame inside SelectedAura for 3D preview
 
+-- Delete mode state
+local deleteModeButton  = nil    -- SelectedAura/DeleteButton, repurposed as mode toggle
+local deleteModeActive  = false
+local selectedForDelete = {}     -- { [frame] = true }
+local itemsScrollRef    = nil    -- captured in init() for use by delete helpers
+
+-- Sort / filter state
+local currentSort = "All"        -- "All" | "ByRarity" | "ByName" | "RecentlyAdded"
+
+local SORT_ACTIVE_COLOR   = Color3.fromRGB(55, 180, 100)   -- green — active button
+local SORT_INACTIVE_COLOR = Color3.fromRGB(44, 128, 255)   -- blue  — inactive buttons
+
+-- Reassigns LayoutOrder for all item frames based on currentSort.
+-- Pass the scroll frame directly (from addItem) or fall back to itemsScrollRef.
+local function reapplySort(scroll)
+	scroll = scroll or itemsScrollRef
+	if not scroll then return end
+
+	local frames = {}
+	for _, child in ipairs(scroll:GetChildren()) do
+		if child:IsA("Frame") then
+			table.insert(frames, child)
+		end
+	end
+
+	if currentSort == "ByRarity" then
+		-- Rarest first (highest Rarity number = hardest to get)
+		table.sort(frames, function(a, b)
+			return (a:GetAttribute("Rarity") or 0) > (b:GetAttribute("Rarity") or 0)
+		end)
+	elseif currentSort == "ByName" then
+		table.sort(frames, function(a, b)
+			local nameA = (a:GetAttribute("BrainrotName") or ""):lower()
+			local nameB = (b:GetAttribute("BrainrotName") or ""):lower()
+			return nameA < nameB
+		end)
+	elseif currentSort == "RecentlyAdded" then
+		-- Newest first (highest SlotId = most recently added)
+		table.sort(frames, function(a, b)
+			return (a:GetAttribute("SlotId") or 0) > (b:GetAttribute("SlotId") or 0)
+		end)
+	else
+		-- "All" — original server order (lowest SlotId first)
+		table.sort(frames, function(a, b)
+			return (a:GetAttribute("SlotId") or 0) < (b:GetAttribute("SlotId") or 0)
+		end)
+	end
+
+	for i, frame in ipairs(frames) do
+		frame.LayoutOrder = i
+	end
+end
+
 -- Strip underscores for display only; internal Name/ModelName stays unchanged
 local function displayName(name: string): string
 	return name:gsub("_", " ")
@@ -45,58 +99,9 @@ local function strokeColor(color: Color3): Color3
 	return lum > 0.7 and Color3.new(0, 0, 0) or color
 end
 
--- Shared helper: centers a model at world origin, creates a camera, and parents
--- it into the given ViewportFrame. Runs async inside task.spawn.
+-- Delegate viewport rendering to the shared utility
 local function loadModelIntoViewport(viewportFrame, modelName)
-	-- Clear any existing model/camera from a previous call
-	for _, child in ipairs(viewportFrame:GetChildren()) do
-		child:Destroy()
-	end
-
-	if not modelName then return end
-
-	task.spawn(function()
-		local brainrotsFolder = ReplicatedStorage:FindFirstChild("Brainrots")
-		if not brainrotsFolder then return end
-
-		local modelTemplate = brainrotsFolder:FindFirstChild(modelName)
-		if not modelTemplate then return end
-
-		local modelClone = modelTemplate:Clone()
-		modelClone.Parent = viewportFrame
-
-		-- Get bounding box BEFORE moving, so we know true center and size
-		local bboxCF, bboxSize = modelClone:GetBoundingBox()
-		local bboxCenter = bboxCF.Position
-		local maxDim     = math.max(bboxSize.X, bboxSize.Y, bboxSize.Z)
-
-		-- Move model so its bounding box center sits at the world origin
-		if modelClone.PrimaryPart then
-			local pivotPos    = modelClone:GetPivot().Position
-			local newPivotPos = pivotPos - bboxCenter
-			modelClone:PivotTo(CFrame.new(newPivotPos))
-		else
-			-- No PrimaryPart — shift all BaseParts manually
-			local offset = -bboxCenter
-			for _, part in ipairs(modelClone:GetDescendants()) do
-				if part:IsA("BasePart") then
-					part.CFrame = part.CFrame + offset
-				end
-			end
-		end
-
-		-- Create camera and auto-fit based on model size
-		local camera = Instance.new("Camera")
-		camera.Parent               = viewportFrame
-		viewportFrame.CurrentCamera = camera
-
-		-- Models face -Z in Roblox, so camera goes on the -Z side.
-		-- X = 0 keeps the model centered (no left/right offset).
-		local dist   = maxDim * 0.8
-		local camPos = Vector3.new(0, dist * 0.35, -dist)
-		local lookAt = Vector3.new(0, bboxSize.Y * 0.1, 0)
-		camera.CFrame = CFrame.lookAt(camPos, lookAt)
-	end)
+	ViewportUtil.loadModelIntoViewport(viewportFrame, modelName)
 end
 
 -- Add a small "EQUIPPED" badge to the top of an inventory frame
@@ -128,6 +133,232 @@ end
 local function removeEquippedBadge(frame: Frame)
 	local badge = frame:FindFirstChild("EquippedBadge")
 	if badge then badge:Destroy() end
+end
+
+-- ── Delete mode helpers ───────────────────────────────────────────────────────
+
+local function getDeleteCount()
+	local count = 0
+	for _ in pairs(selectedForDelete) do count += 1 end
+	return count
+end
+
+-- Works for TextButton or ImageButton with a TextLabel child
+local function setButtonText(btn, text)
+	if btn:IsA("TextButton") then
+		btn.Text = text
+	else
+		local label = btn:FindFirstChildWhichIsA("TextLabel")
+		if label then label.Text = text end
+	end
+end
+
+-- Updates DeleteButton label to reflect current delete mode state:
+--   Not in mode  → "Delete Mode"
+--   In mode, 0   → "Cancel"
+--   In mode, N   → "Delete (N)"
+local function updateDeleteButton()
+	if not deleteModeButton then return end
+	if not deleteModeActive then
+		setButtonText(deleteModeButton, "Delete Mode")
+	else
+		local count = getDeleteCount()
+		setButtonText(deleteModeButton, count > 0 and ("Delete (" .. count .. ")") or "Cancel")
+	end
+end
+
+local function setCheckmark(frame: Frame, checked: boolean)
+	local overlay = frame:FindFirstChild("DeleteCheckOverlay")
+	if not overlay then return end
+	local label = overlay:FindFirstChild("CheckLabel")
+	if label then label.Text = checked and "✓" or "" end
+	overlay.BackgroundColor3       = checked and Color3.fromRGB(200, 50, 70) or Color3.fromRGB(0, 0, 0)
+	overlay.BackgroundTransparency = checked and 0.2 or 0.6
+end
+
+local function addCheckboxOverlay(frame: Frame)
+	if frame:FindFirstChild("DeleteCheckOverlay") then return end
+
+	local overlay = Instance.new("Frame")
+	overlay.Name                   = "DeleteCheckOverlay"
+	overlay.Size                   = UDim2.new(0, 22, 0, 22)
+	overlay.Position               = UDim2.new(1, -26, 0, 4)
+	overlay.BackgroundColor3       = Color3.fromRGB(0, 0, 0)
+	overlay.BackgroundTransparency = 0.6
+	overlay.BorderSizePixel        = 0
+	overlay.ZIndex                 = 10
+	overlay.Parent                 = frame
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 4)
+	corner.Parent = overlay
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color     = Color3.fromRGB(200, 200, 200)
+	stroke.Thickness = 1.5
+	stroke.Parent    = overlay
+
+	local label = Instance.new("TextLabel")
+	label.Name                   = "CheckLabel"
+	label.Size                   = UDim2.new(1, 0, 1, 0)
+	label.BackgroundTransparency = 1
+	label.Text                   = ""
+	label.TextColor3             = Color3.new(1, 1, 1)
+	label.TextScaled             = true
+	label.Font                   = Enum.Font.GothamBold
+	label.ZIndex                 = 11
+	label.Parent                 = overlay
+end
+
+local function removeCheckboxOverlay(frame: Frame)
+	local overlay = frame:FindFirstChild("DeleteCheckOverlay")
+	if overlay then overlay:Destroy() end
+end
+
+local function enterDeleteMode()
+	deleteModeActive  = true
+	selectedForDelete = {}
+	if equipButton then
+		equipButton.Active              = false
+		equipButton.BackgroundColor3    = Color3.fromRGB(80, 80, 90)
+		equipButton.AutoButtonColor     = false
+	end
+	if not itemsScrollRef then return end
+	for _, child in ipairs(itemsScrollRef:GetChildren()) do
+		if child:IsA("Frame") then
+			addCheckboxOverlay(child)
+		end
+	end
+	updateDeleteButton()
+end
+
+local function exitDeleteMode()
+	deleteModeActive  = false
+	selectedForDelete = {}
+	if equipButton then
+		equipButton.Active          = true
+		equipButton.BackgroundColor3 = Color3.fromRGB(55, 180, 100)
+		equipButton.AutoButtonColor  = true
+	end
+	if not itemsScrollRef then return end
+	for _, child in ipairs(itemsScrollRef:GetChildren()) do
+		if child:IsA("Frame") then
+			removeCheckboxOverlay(child)
+			child.BackgroundColor3 = NORMAL_COLOR
+		end
+	end
+	updateDeleteButton()
+end
+
+local function executeBulkDelete()
+	local toDelete = {}
+	for frame in pairs(selectedForDelete) do
+		table.insert(toDelete, frame)
+	end
+
+	for _, frame in ipairs(toDelete) do
+		if frame == equippedFrame then
+			EquipRemote:FireServer(nil)
+			equippedFrame = nil
+		end
+		if frame == selectedFrame then
+			selectedFrame = nil
+			clearSelectedAuraPanel()
+		end
+		local slotId = frame:GetAttribute("SlotId")
+		if slotId then
+			DeleteItemRemote:FireServer(slotId)
+		end
+		frame:Destroy()
+	end
+end
+
+local function showConfirmDeletePopup(count: number, onConfirm: () -> ())
+	local screenGui = playerGui:WaitForChild("ScreenGui")
+
+	local overlay = Instance.new("ImageButton")
+	overlay.Name                   = "DeleteConfirmOverlay"
+	overlay.Size                   = UDim2.new(1, 0, 1, 0)
+	overlay.BackgroundColor3       = Color3.new(0, 0, 0)
+	overlay.BackgroundTransparency = 0.5
+	overlay.Image                  = ""
+	overlay.ZIndex                 = 50
+	overlay.Parent                 = screenGui
+
+	local dialog = Instance.new("Frame")
+	dialog.Size              = UDim2.new(0, 300, 0, 160)
+	dialog.Position          = UDim2.new(0.5, -150, 0.5, -80)
+	dialog.BackgroundColor3  = Color3.fromRGB(20, 25, 35)
+	dialog.BorderSizePixel   = 0
+	dialog.ZIndex            = 51
+	dialog.Parent            = overlay
+
+	local dialogCorner = Instance.new("UICorner")
+	dialogCorner.CornerRadius = UDim.new(0, 12)
+	dialogCorner.Parent = dialog
+
+	local dialogStroke = Instance.new("UIStroke")
+	dialogStroke.Color     = Color3.fromRGB(60, 65, 80)
+	dialogStroke.Thickness = 1.5
+	dialogStroke.Parent    = dialog
+
+	local title = Instance.new("TextLabel")
+	title.Size                   = UDim2.new(1, -20, 0.35, 0)
+	title.Position               = UDim2.new(0, 10, 0.05, 0)
+	title.BackgroundTransparency = 1
+	title.Text                   = "Delete " .. count .. " item" .. (count == 1 and "" or "s") .. "?"
+	title.TextColor3             = Color3.new(1, 1, 1)
+	title.TextScaled             = true
+	title.Font                   = Enum.Font.GothamBold
+	title.ZIndex                 = 52
+	title.Parent                 = dialog
+
+	local subtitle = Instance.new("TextLabel")
+	subtitle.Size                   = UDim2.new(1, -20, 0.22, 0)
+	subtitle.Position               = UDim2.new(0, 10, 0.38, 0)
+	subtitle.BackgroundTransparency = 1
+	subtitle.Text                   = "This cannot be undone."
+	subtitle.TextColor3             = Color3.fromRGB(150, 150, 160)
+	subtitle.TextScaled             = true
+	subtitle.Font                   = Enum.Font.Gotham
+	subtitle.ZIndex                 = 52
+	subtitle.Parent                 = dialog
+
+	local function makeBtn(text, bgColor, xPos)
+		local btn = Instance.new("TextButton")
+		btn.Size             = UDim2.new(0.43, 0, 0.28, 0)
+		btn.Position         = UDim2.new(xPos, 0, 0.65, 0)
+		btn.BackgroundColor3 = bgColor
+		btn.Text             = text
+		btn.TextColor3       = Color3.new(1, 1, 1)
+		btn.TextScaled       = true
+		btn.Font             = Enum.Font.GothamBold
+		btn.BorderSizePixel  = 0
+		btn.ZIndex           = 52
+		btn.Parent           = dialog
+		local c = Instance.new("UICorner")
+		c.CornerRadius = UDim.new(0, 8)
+		c.Parent = btn
+		ButtonEffects.apply(btn)
+		return btn
+	end
+
+	local confirmBtn = makeBtn("Delete",  Color3.fromRGB(200, 50, 70),  0.06)
+	local cancelBtn  = makeBtn("Cancel",  Color3.fromRGB(70, 70, 80),   0.51)
+
+	local function close()
+		overlay:Destroy()
+	end
+
+	-- Clicking the dim overlay cancels
+	overlay.MouseButton1Click:Connect(close)
+
+	confirmBtn.MouseButton1Click:Connect(function()
+		close()
+		onConfirm()
+	end)
+
+	cancelBtn.MouseButton1Click:Connect(close)
 end
 
 local function updateEquipButton()
@@ -165,13 +396,13 @@ local function updateSelectedAuraPanel(frame: Frame)
 	auraName.TextColor3   = Color3.new(1, 1, 1)
 	auraRarity.TextColor3 = Color3.new(1, 1, 1)
 
-	-- Get money reward from brainrot data
+	-- Get rolls reward from brainrot data
 	if auraRewards then
 		local brainrotName = frame:GetAttribute("BrainrotName")
 		local brainrot = BrainrotConfig.getBrainrotByName(brainrotName)
 		if brainrot then
-			local money = BrainrotConfig.getMoneyForBrainrot(brainrot)
-			auraRewards.Text = "+" .. money
+			local rolls = BrainrotConfig.getRollsForBrainrot(brainrot)
+			auraRewards.Text = "+" .. rolls
 			auraRewards.TextColor3 = Color3.new(1, 1, 1)
 		end
 	end
@@ -227,7 +458,7 @@ local function registerItemFrame(frame: Frame)
 	if not btn then return end
 
 	btn.MouseEnter:Connect(function()
-		if selectedFrame ~= frame then
+		if not deleteModeActive and selectedFrame ~= frame then
 			TweenService:Create(frame, TweenInfo.new(0.1, Enum.EasingStyle.Linear), {
 				BackgroundColor3 = HOVER_COLOR
 			}):Play()
@@ -235,18 +466,35 @@ local function registerItemFrame(frame: Frame)
 	end)
 
 	btn.MouseLeave:Connect(function()
-		TweenService:Create(frame, TweenInfo.new(0.1, Enum.EasingStyle.Linear), {
-			BackgroundColor3 = NORMAL_COLOR
-		}):Play()
+		if not deleteModeActive then
+			TweenService:Create(frame, TweenInfo.new(0.1, Enum.EasingStyle.Linear), {
+				BackgroundColor3 = NORMAL_COLOR
+			}):Play()
+		end
 	end)
 
 	btn.MouseButton1Click:Connect(function()
-		if selectedFrame == frame then
-			clearStroke(frame)
-			selectedFrame = nil
-			clearSelectedAuraPanel()
+		if deleteModeActive then
+			-- Toggle checkbox selection
+			if selectedForDelete[frame] then
+				selectedForDelete[frame] = nil
+				setCheckmark(frame, false)
+				TweenService:Create(frame, TweenInfo.new(0.1), { BackgroundColor3 = NORMAL_COLOR }):Play()
+			else
+				selectedForDelete[frame] = true
+				setCheckmark(frame, true)
+				TweenService:Create(frame, TweenInfo.new(0.1), { BackgroundColor3 = Color3.fromRGB(55, 18, 22) }):Play()
+			end
+			updateDeleteButton()
 		else
-			selectFrame(frame)
+			-- Normal single-select behavior
+			if selectedFrame == frame then
+				clearStroke(frame)
+				selectedFrame = nil
+				clearSelectedAuraPanel()
+			else
+				selectFrame(frame)
+			end
 		end
 	end)
 end
@@ -279,6 +527,7 @@ function InventoryController.addItem(brainrot, slotId)
 	if slotId then
 		frame:SetAttribute("SlotId", slotId)
 	end
+	frame.LayoutOrder = slotId or 0
 
 	-- Thin rarity color bar on the left edge (full card height)
 	local rarityBar = Instance.new("Frame")
@@ -345,6 +594,14 @@ function InventoryController.addItem(brainrot, slotId)
 	imageButton.Parent                 = frame
 
 	frame.Parent = itemsScroll
+
+	-- If delete mode is already active when this item is added, give it a checkbox
+	if deleteModeActive then
+		addCheckboxOverlay(frame)
+	end
+
+	-- Re-sort so the new item lands in the right position for the active filter
+	reapplySort(itemsScroll)
 end
 
 function InventoryController.init()
@@ -424,32 +681,42 @@ function InventoryController.init()
 		end)
 	end)
 
-	-- Wire up DeleteButton independently
+	-- Wire up DeleteButton — repurposed as delete mode toggle
 	task.spawn(function()
 		local selectedAura = inventoryFrame:WaitForChild("SelectedAura")
-		local deleteButton = selectedAura:WaitForChild("DeleteButton")
-		ButtonEffects.apply(deleteButton)
-		deleteButton.MouseButton1Click:Connect(function()
-			if not selectedFrame then return end
+		deleteModeButton   = selectedAura:WaitForChild("DeleteButton")
+		ButtonEffects.apply(deleteModeButton)
+		setButtonText(deleteModeButton, "Delete Mode")
 
-			local toDelete = selectedFrame
-			selectedFrame  = nil
-
-			-- If deleting the equipped item, unequip on server too
-			if toDelete == equippedFrame then
-				EquipRemote:FireServer(nil)
-				equippedFrame = nil
+		deleteModeButton.MouseButton1Click:Connect(function()
+			if not deleteModeActive then
+				-- Enter delete mode, clear any single-selection first
+				if selectedFrame then
+					clearStroke(selectedFrame)
+					selectedFrame = nil
+					clearSelectedAuraPanel()
+				end
+				enterDeleteMode()
+			else
+				local count = getDeleteCount()
+				if count > 0 then
+					-- Confirm and bulk delete
+					showConfirmDeletePopup(count, function()
+						executeBulkDelete()
+						exitDeleteMode()
+					end)
+				else
+					-- Nothing selected — just cancel
+					exitDeleteMode()
+				end
 			end
+		end)
 
-			-- Tell server to remove from saved data
-			local slotId = toDelete:GetAttribute("SlotId")
-			if slotId then
-				DeleteItemRemote:FireServer(slotId)
+		-- Exit delete mode cleanly when inventory closes
+		inventoryFrame:GetPropertyChangedSignal("Visible"):Connect(function()
+			if not inventoryFrame.Visible and deleteModeActive then
+				exitDeleteMode()
 			end
-
-			-- Destroy first so any error in clearSelectedAuraPanel can't block it
-			toDelete:Destroy()
-			clearSelectedAuraPanel()
 		end)
 	end)
 
@@ -474,6 +741,8 @@ function InventoryController.init()
 			:WaitForChild("InventoryArea")
 			:WaitForChild("ItemsScroll")
 
+		itemsScrollRef = itemsScroll  -- expose to delete mode helpers
+
 		for _, child in ipairs(itemsScroll:GetChildren()) do
 			registerItemFrame(child)
 		end
@@ -481,6 +750,55 @@ function InventoryController.init()
 		itemsScroll.ChildAdded:Connect(function(child)
 			registerItemFrame(child)
 		end)
+	end)
+
+	-- Wire up sort / filter buttons at InventoryGUI/FilterGUI/
+	task.spawn(function()
+		local filterGUI = inventoryFrame:WaitForChild("FilterGUI")
+
+		local function findChildCI(parent, name)
+			local lower = name:lower()
+			for _, child in ipairs(parent:GetChildren()) do
+				if child.Name:lower() == lower then return child end
+			end
+			return nil
+		end
+
+		-- { buttonName, sortKey }
+		local SORT_BUTTONS = {
+			{ name = "All",            key = "All"           },
+			{ name = "By Rarity",      key = "ByRarity"      },
+			{ name = "By Name",        key = "ByName"        },
+			{ name = "Recently Added", key = "RecentlyAdded" },
+		}
+
+		local buttonRefs = {}
+
+		local function refreshSortColors()
+			for _, entry in ipairs(buttonRefs) do
+				entry.btn.ImageColor3 = (currentSort == entry.key) and SORT_ACTIVE_COLOR or SORT_INACTIVE_COLOR
+			end
+		end
+
+		for _, entry in ipairs(SORT_BUTTONS) do
+			local container = findChildCI(filterGUI, entry.name)
+			local btn = container and container:FindFirstChildWhichIsA("ImageButton")
+			if btn then
+				table.insert(buttonRefs, { btn = btn, key = entry.key })
+				ButtonEffects.apply(btn)
+
+				btn.MouseButton1Click:Connect(function()
+					currentSort = entry.key
+					refreshSortColors()
+					reapplySort()
+				end)
+			else
+				warn("[InventoryController] Filter button not found at FilterGUI/" .. entry.name .. "/ImageButton")
+			end
+		end
+
+		-- Set initial color state
+		refreshSortColors()
 	end)
 
 	print("[Client] Inventory Controller initialized")
